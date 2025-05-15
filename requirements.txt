@@ -1,0 +1,6 @@
+selenium
+webdriver-manager
+selenium-wire==5.1.0
+blinker<1.8
+setuptools
+tqdm
