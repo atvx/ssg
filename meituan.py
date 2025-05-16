@@ -8,11 +8,15 @@ import time
 import random
 import json
 import re
+import os
+import pickle
 from seleniumwire import webdriver as wire_webdriver
 from seleniumwire.utils import decode
 from decimal import Decimal, ROUND_HALF_UP
 from tqdm import tqdm
 import datetime
+import subprocess
+import platform
 
 # 配置常量
 CONFIG = {
@@ -25,7 +29,9 @@ CONFIG = {
         r'https://pos\.meituan\.com/.*/tree/paged/query\?',
         r'https://pos\.meituan\.com/web/api/v2/reports/combine/business-summary-page'
     ],
-    "WAIT_TIME": 15
+    "WAIT_TIME": 15,
+    "USER_DATA_DIR": "chrome_user_data",
+    "COOKIES_FILE": os.path.join("chrome_user_data", "meituan_cookies.pkl")
 }
 
 # 滑块验证模式: 0=自动, 1=手动
@@ -42,8 +48,12 @@ ACCOUNT_CONFIG = {
 }
 
 
-def init_chrome_driver():
-    """初始化Chrome浏览器"""
+def init_chrome_driver(force_new_session=False):
+    """初始化Chrome浏览器
+    
+    Args:
+        force_new_session (bool): 如果为True，不使用现有的用户数据目录
+    """
     chrome_options = Options()
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
@@ -55,28 +65,101 @@ def init_chrome_driver():
     chrome_options.add_experimental_option("useAutomationExtension", False)
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     
+    # 使用用户数据目录保持登录状态
+    use_user_data_dir = not force_new_session
+    if use_user_data_dir:
+        try:
+            # 检查默认用户数据目录是否存在
+            user_data_dir = os.path.abspath(CONFIG["USER_DATA_DIR"])
+            if not os.path.exists(user_data_dir):
+                os.makedirs(user_data_dir, exist_ok=True)
+                print(f"创建用户数据目录: {user_data_dir}")
+            
+            # 使用固定目录
+            chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+        except Exception as e:
+            print(f"设置用户数据目录时出错，将使用临时用户配置文件")
+            use_user_data_dir = False
+    else:
+        print("使用新会话模式，不加载用户数据目录")
+    
     # 抑制控制台错误消息
     chrome_options.add_argument("--log-level=3")
     chrome_options.add_argument("--silent")
     chrome_options.add_argument("--disable-logging")
     chrome_options.add_experimental_option('excludeSwitches', ['enable-automation', 'enable-logging'])
     
-    if MONITOR_API_RESPONSE:
-        seleniumwire_options = {
-            'disable_encoding': True,
-            'suppress_connection_errors': True
-        }
-        driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)
-        driver.scopes = CONFIG["MONITOR_SCOPES"]
-    else:
-        driver = webdriver.Chrome(options=chrome_options)
+    # 首次尝试启动浏览器
+    try:
+        if MONITOR_API_RESPONSE:
+            seleniumwire_options = {
+                'disable_encoding': True,
+                'suppress_connection_errors': True
+            }
+            driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)
+            driver.scopes = CONFIG["MONITOR_SCOPES"]
+        else:
+            driver = webdriver.Chrome(options=chrome_options)
+            
+        # 防止检测
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'})
         
-    # 防止检测
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-        "userAgent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'})
-    
-    return driver
+        return driver
+    except Exception as e:
+        error_message = str(e).lower()
+        
+        # 检查是否是用户数据目录被占用的错误
+        if "user data directory is already in use" in error_message and use_user_data_dir:
+            print("检测到Chrome实例已在运行，正在尝试关闭...")
+            
+            # 尝试终止现有Chrome进程
+            kill_chrome_processes()
+            
+            # 等待进程完全终止
+            time.sleep(2)
+            
+            # 重新尝试启动Chrome，但不使用用户数据目录
+            try:
+                # 移除用户数据目录选项
+                chrome_options = Options()
+                chrome_options.add_argument("--no-sandbox")
+                chrome_options.add_argument("--disable-dev-shm-usage")
+                chrome_options.add_argument("--disable-gpu")
+                chrome_options.add_argument("--window-size=1920,1080")
+                chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                chrome_options.add_experimental_option("useAutomationExtension", False)
+                chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+                chrome_options.add_argument("--log-level=3")
+                chrome_options.add_argument("--silent")
+                chrome_options.add_argument("--disable-logging")
+                chrome_options.add_experimental_option('excludeSwitches', ['enable-automation', 'enable-logging'])
+                
+                print("使用新会话模式启动Chrome...")
+                
+                if MONITOR_API_RESPONSE:
+                    seleniumwire_options = {
+                        'disable_encoding': True,
+                        'suppress_connection_errors': True
+                    }
+                    driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)
+                    driver.scopes = CONFIG["MONITOR_SCOPES"]
+                else:
+                    driver = webdriver.Chrome(options=chrome_options)
+                
+                # 防止检测
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                    "userAgent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'})
+                
+                return driver
+            except Exception as inner_e:
+                raise Exception(f"无法启动Chrome: {inner_e}")
+        else:
+            # 其他类型的错误，抛出异常
+            raise Exception(f"启动Chrome时出错: {e}")
 
 
 def js_click(driver, selector):
@@ -540,9 +623,9 @@ def login_with_phone(driver, wait):
                 success_elements = driver.find_elements(By.CSS_SELECTOR, ".org-profile, .user-profile, .username, .logout")
                 if success_elements:
                     login_success = True
-        except Exception:
-            pass
-        
+        except Exception as e:
+            print(f"检查登录状态时出错: {e}")
+            
         if login_success:
             print("登录成功")
             return True
@@ -633,11 +716,23 @@ def login_with_account(driver, wait):
                 success_elements = driver.find_elements(By.CSS_SELECTOR, ".org-profile, .user-profile, .username, .logout")
                 if success_elements:
                     login_success = True
+                    
+            # 检查本地存储和cookie中的令牌
+            if not login_success:
+                token_exists = driver.execute_script("""
+                return document.cookie.indexOf('token') > -1 || 
+                       document.cookie.indexOf('auth') > -1 ||
+                       window.localStorage.getItem('token') !== null;
+                """)
+                if token_exists:
+                    login_success = True
         except Exception:
             pass
         
         if login_success:
             print("登录成功")
+            # 添加额外的等待，确保所有会话数据都已保存
+            time.sleep(2)
             return True
         else:
             print("登录可能未成功，请检查页面状态")
@@ -855,6 +950,18 @@ def handle_phone_verification(driver, wait):
     if not (verify_elements.get('hasMask') and (verify_elements.get('hasTitle') or verify_elements.get('hasInput'))):
         return True
     
+    # 获取要发送验证码的手机号
+    phone_number = driver.execute_script("""
+    var phoneElem = document.querySelector('.verify-phone');
+    if (phoneElem) {
+        return phoneElem.textContent.replace(/[^0-9]/g, '');
+    }
+    return '';
+    """)
+    
+    if phone_number:
+        print(f"需要向手机号 {phone_number} 发送验证码")
+    
     # 尝试点击获取验证码按钮
     get_code_success = driver.execute_script("""
     var btnId = document.getElementById('yodaSmsCodeBtn');
@@ -934,6 +1041,9 @@ def handle_phone_verification(driver, wait):
                         """)
                         
                         if not still_in_verify:
+                            # 登录成功，保存cookies
+                            if hasattr(driver, 'get_cookies'):
+                                save_cookies(driver)
                             return True
                         else:
                             # 检查是否有错误提示
@@ -965,6 +1075,10 @@ def handle_phone_verification(driver, wait):
         print("=" * 50)
         print("请手动完成验证，然后按回车继续...")
         input()
+        
+    # 验证完成后再次保存cookies
+    if hasattr(driver, 'get_cookies'):
+        save_cookies(driver)
         
     return True
 
@@ -1499,54 +1613,402 @@ def select_date(driver, date_str):
         """)
 
 
+def save_cookies(driver):
+    """保存cookies到文件"""
+    try:
+        if not driver:
+            print("无法保存cookies: driver对象为空")
+            return False
+            
+        cookies = driver.get_cookies()
+        if not cookies:
+            print("没有可保存的cookies")
+            return False
+            
+        # 确保用户数据目录存在
+        user_data_dir = os.path.abspath(CONFIG["USER_DATA_DIR"])
+        if not os.path.exists(user_data_dir):
+            os.makedirs(user_data_dir, exist_ok=True)
+            print(f"创建用户数据目录: {user_data_dir}")
+            
+        # 保存cookie文件
+        cookies_file = CONFIG["COOKIES_FILE"]
+        with open(cookies_file, 'wb') as file:
+            pickle.dump(cookies, file)
+        print(f"Cookies已保存到 {cookies_file}")
+        
+        # 保存本地存储
+        try:
+            local_storage = driver.execute_script("return Object.entries(localStorage);")
+            if local_storage:
+                local_storage_file = cookies_file.replace('.pkl', '_localStorage.pkl')
+                with open(local_storage_file, 'wb') as file:
+                    pickle.dump(local_storage, file)
+        except Exception as e:
+            print(f"保存localStorage时出错: {e}")
+            
+        return True
+    except Exception as e:
+        print(f"保存Cookies时出错: {e}")
+        return False
+
+
+def load_cookies(driver, verify=True):
+    """从文件加载cookies
+    
+    Args:
+        driver: WebDriver实例
+        verify: 是否验证cookies有效性
+        
+    Returns:
+        bool: 是否成功加载有效cookies
+    """
+    try:
+        cookies_file = CONFIG["COOKIES_FILE"]
+        if not os.path.exists(cookies_file):
+            print(f"Cookie文件不存在: {cookies_file}")
+            return False
+            
+        # 检查文件大小和修改时间
+        file_size = os.path.getsize(cookies_file)
+        if file_size < 10:  # 文件太小，可能是空的或损坏的
+            print("Cookie文件为空或已损坏，将创建新的登录会话")
+            return False
+            
+        # 检查文件修改时间
+        last_modified = os.path.getmtime(cookies_file)
+        current_time = time.time()
+        file_age_days = (current_time - last_modified) / (24 * 3600)
+        
+        if file_age_days > 14:  # 如果文件超过14天没更新，可能已过期
+            print(f"Cookie文件过期 ({file_age_days:.1f}天前创建)，将重新登录")
+            return False
+            
+        try:
+            with open(cookies_file, 'rb') as file:
+                cookies = pickle.load(file)
+            
+            if not cookies or not isinstance(cookies, list) or len(cookies) == 0:
+                print("Cookie文件格式无效或为空")
+                return False
+                
+            # 添加cookies到driver
+            for cookie in cookies:
+                try:
+                    if 'expiry' in cookie:
+                        # 检查cookie是否过期
+                        if isinstance(cookie['expiry'], (int, float)) and cookie['expiry'] < time.time():
+                            print(f"跳过已过期的cookie: {cookie.get('name')}")
+                            continue
+                        # Selenium无法处理浮点数的expiry值
+                        cookie['expiry'] = int(cookie['expiry'])
+                    driver.add_cookie(cookie)
+                except Exception as e:
+                    print(f"添加cookie时出错 ({cookie.get('name')}): {e}")
+            
+            # 尝试加载localStorage
+            try:
+                local_storage_file = cookies_file.replace('.pkl', '_localStorage.pkl')
+                if os.path.exists(local_storage_file):
+                    with open(local_storage_file, 'rb') as file:
+                        local_storage_items = pickle.load(file)
+                        
+                    if local_storage_items and isinstance(local_storage_items, list):
+                        driver.execute_script("""
+                        var items = arguments[0];
+                        items.forEach(item => {
+                            localStorage.setItem(item[0], item[1]);
+                        });
+                        """, local_storage_items)
+            except Exception as e:
+                print(f"加载localStorage时出错: {e}")
+            
+            print("成功加载之前保存的cookies")
+            
+            # 如果需要验证cookies有效性
+            if verify:
+                # 检查是否有常见的验证cookie
+                auth_cookies = [c for c in cookies if c.get('name') in ['token', 'auth', 'sessionid', 'login_token']]
+                if not auth_cookies:
+                    print("未找到关键的身份验证cookie，可能需要重新登录")
+                    return False
+                    
+                # 检查cookie过期时间
+                now = time.time()
+                expired_cookies = [c for c in auth_cookies if 'expiry' in c and c['expiry'] < now]
+                if expired_cookies:
+                    print("关键身份验证cookie已过期，需要重新登录")
+                    return False
+            
+            return True
+        except Exception as e:
+            print(f"读取Cookie文件时出错: {e}")
+            return False
+    except Exception as e:
+        print(f"加载Cookies过程中出错: {e}")
+        return False
+
+
+def kill_chrome_processes():
+    """终止所有Chrome进程"""
+    try:
+        system = platform.system()
+        if system == 'Windows':
+            # Windows系统使用taskkill命令
+            subprocess.run(['taskkill', '/F', '/IM', 'chrome.exe'], 
+                          stdout=subprocess.DEVNULL, 
+                          stderr=subprocess.DEVNULL)
+            subprocess.run(['taskkill', '/F', '/IM', 'chromedriver.exe'], 
+                          stdout=subprocess.DEVNULL, 
+                          stderr=subprocess.DEVNULL)
+        elif system == 'Linux':
+            # Linux系统使用pkill命令
+            subprocess.run(['pkill', '-f', 'chrome'], 
+                          stdout=subprocess.DEVNULL, 
+                          stderr=subprocess.DEVNULL)
+            subprocess.run(['pkill', '-f', 'chromedriver'], 
+                          stdout=subprocess.DEVNULL, 
+                          stderr=subprocess.DEVNULL)
+        elif system == 'Darwin':
+            # macOS系统
+            subprocess.run(['pkill', '-f', 'Google Chrome'], 
+                          stdout=subprocess.DEVNULL, 
+                          stderr=subprocess.DEVNULL)
+            subprocess.run(['pkill', '-f', 'chromedriver'], 
+                          stdout=subprocess.DEVNULL, 
+                          stderr=subprocess.DEVNULL)
+            
+        print("已终止之前的Chrome进程")
+        # 等待进程完全关闭
+        time.sleep(1)
+        return True
+    except Exception:
+        # 忽略任何错误
+        return False
+
+
 def main():
     """主函数：执行完整的登录和数据获取流程"""
     print("启动美团POS自动化工具...")
     
     driver = None
-    try:
-        # 初始化浏览器
-        driver = init_chrome_driver()
-        wait = WebDriverWait(driver, CONFIG["WAIT_TIME"])
-        
-        # 打开登录页面
-        driver.get(CONFIG["LOGIN_URL"])
-        print("正在加载登录页面...")
-        
-        # 根据登录方式选择
-        login_success = False
-        if LOGIN_MODE == 0:
-            print("使用手机号登录...")
-            login_success = login_with_phone(driver, wait)
-        else:
-            print("使用账号密码登录...")
-            login_success = login_with_account(driver, wait)
+    force_new_session = False
+    retry_count = 0
+    max_retries = 2
+    
+    while retry_count <= max_retries:
+        try:
+            # 初始化浏览器
+            try:
+                driver = init_chrome_driver(force_new_session)
+                wait = WebDriverWait(driver, CONFIG["WAIT_TIME"])
+            except Exception as e:
+                # 简化错误输出，不显示详细堆栈信息
+                if "user data directory is already in use" in str(e).lower():
+                    # 这种错误已在init_chrome_driver中处理，但如果仍然失败，尝试强制新会话
+                    print("无法自动关闭Chrome实例，尝试使用强制新会话模式...")
+                    force_new_session = True
+                    retry_count += 1
+                    continue
+                elif retry_count == 0:
+                    # 首次尝试失败时不显示错误
+                    print("浏览器初始化失败，尝试使用强制新会话模式...")
+                    force_new_session = True
+                    retry_count += 1
+                    continue
+                else:
+                    # 最后一次尝试也失败时，提示用户手动解决
+                    print("浏览器启动失败。请确保没有Chrome实例正在运行，然后重试。")
+                    return
             
-        if login_success:
-            # 选择机构
-            if select_organization(driver, wait):
-                print("机构选择成功")
+            # 打开登录页面
+            driver.get(CONFIG["LOGIN_URL"])
+            print("正在加载登录页面...")
+            
+            # 判断是否已经登录
+            already_logged_in = False
+            cookies_loaded = False
+            
+            # 只有在非强制新会话模式下才尝试加载cookie
+            if not force_new_session:
+                # 尝试加载cookies
+                try:
+                    cookies_loaded = load_cookies(driver, verify=True)
+                    if cookies_loaded:
+                        print("已加载之前的登录信息，尝试刷新页面...")
+                        # 重新加载页面，检查是否已登录
+                        driver.refresh()
+                        time.sleep(3)
+                except Exception as e:
+                    print(f"加载cookies时出错: {e}")
+                    cookies_loaded = False
+                
+                # 检查是否成功保持登录状态
+                try:
+                    if '/login' not in driver.current_url and '/auth' not in driver.current_url:
+                        # 检查是否有个人信息元素
+                        user_elements = driver.find_elements(By.CSS_SELECTOR, ".user-profile, .username, .logout, .org-profile")
+                        
+                        if user_elements:
+                            print("使用之前的登录信息成功登录")
+                            already_logged_in = True
+                        else:
+                            # 尝试更可靠的方式检测登录状态
+                            logged_in = driver.execute_script("""
+                            return document.cookie.indexOf('token') > -1 || 
+                                   document.cookie.indexOf('auth') > -1 ||
+                                   window.localStorage.getItem('token') !== null ||
+                                   !window.location.href.includes('login');
+                            """)
+                            
+                            if logged_in:
+                                print("成功检测到登录状态")
+                                already_logged_in = True
+                except Exception as e:
+                    print(f"检查登录状态时出错: {e}")
+            
+            # 如果没有成功登录，需要重新登录
+            login_success = already_logged_in
+            
+            if not already_logged_in:
+                # 如果之前尝试加载cookie但失败了，可能cookie已过期，尝试删除cookie文件
+                if cookies_loaded == False and os.path.exists(CONFIG["COOKIES_FILE"]) and not force_new_session:
+                    try:
+                        # 备份旧cookie文件以防万一
+                        cookies_file = CONFIG["COOKIES_FILE"]
+                        backup_file = f"{cookies_file}.bak"
+                        if os.path.exists(cookies_file):
+                            import shutil
+                            shutil.copy2(cookies_file, backup_file)
+                            print(f"已备份旧cookie文件到: {backup_file}")
+                        
+                        # 删除可能过期的cookie
+                        os.remove(cookies_file)
+                        print("已删除可能过期的cookie文件")
+                    except Exception as e:
+                        print(f"删除cookie文件时出错: {e}")
+                
+                # 根据登录方式选择
+                if LOGIN_MODE == 0:
+                    print("使用手机号登录...")
+                    login_success = login_with_phone(driver, wait)
+                else:
+                    print("使用账号密码登录...")
+                    login_success = login_with_account(driver, wait)
+                    
+                # 如果登录成功，保存cookies以便下次使用
+                if login_success:
+                    save_cookies(driver)
+                else:
+                    # 如果登录失败且不是强制新会话，尝试使用新会话
+                    if not force_new_session:
+                        print("登录失败，尝试使用新会话模式...")
+                        force_new_session = True
+                        if driver:
+                            driver.quit()
+                            driver = None
+                        retry_count += 1
+                        continue
+            
+            if login_success:
+                # 选择机构
+                org_selected = False
+                try:
+                    org_selected = select_organization(driver, wait)
+                    if org_selected:
+                        print("机构选择成功")
+                    else:
+                        print("未能选择机构，但将继续执行")
+                except Exception as e:
+                    print(f"选择机构时出错: {e}")
+                    
+                # 无论机构选择是否成功，都尝试继续
                 
                 # 隐藏可能的弹窗
-                hide_all_popups(driver)
+                try:
+                    hide_all_popups(driver)
+                except Exception:
+                    pass
                 
                 # 导航到报表中心
-                if navigate_to_report_center(driver, wait):
-                    print("成功导航到报表中心")
-                    
-                    # 导航到营业概览并获取数据
+                report_center_success = False
+                try:
+                    report_center_success = navigate_to_report_center(driver, wait)
+                    if report_center_success:
+                        print("成功导航到报表中心")
+                    else:
+                        print("无法导航到报表中心，但将继续尝试")
+                except Exception as e:
+                    print(f"导航到报表中心时出错: {e}")
+                
+                # 导航到营业概览并获取数据
+                try:
                     navigate_to_business_overview(driver, wait)
-        else:
-            print("登录失败")
+                except Exception as e:
+                    print(f"处理营业概览数据时出错: {e}")
+                
+                # 成功完成所需任务，跳出重试循环
+                break
+            else:
+                print("登录失败")
+                
+                # 如果是最后一次重试，打印更详细的错误信息
+                if retry_count == max_retries:
+                    print("=" * 40)
+                    print("诊断信息:")
+                    cookies_file = os.path.relpath(CONFIG["COOKIES_FILE"])
+                    user_data_dir = os.path.relpath(CONFIG["USER_DATA_DIR"])
+                    print(f"- Cookie文件状态: {'存在' if os.path.exists(cookies_file) else '不存在'} ({cookies_file})")
+                    print(f"- 用户数据目录状态: {'存在' if os.path.exists(user_data_dir) else '不存在'} ({user_data_dir})")
+                    print("- 当前URL:", driver.current_url if driver else "无")
+                    print("=" * 40)
+                
+                # 如果不是最后一次重试，尝试强制新会话模式
+                if retry_count < max_retries:
+                    print(f"尝试重新登录 (尝试 {retry_count+1}/{max_retries+1})")
+                    force_new_session = True
+                    if driver:
+                        driver.quit()
+                        driver = None
+                    retry_count += 1
+                    continue
+                
+                # 如果所有尝试都失败，提示用户重置环境
+                print("所有登录尝试均失败，建议:")
+                print("1. 关闭所有Chrome浏览器实例")
+                print("2. 删除chrome_user_data目录和meituan_cookies.pkl文件")
+                print("3. 重新运行程序")
+                break
+                
+        except Exception as e:
+            print(f"运行过程中发生错误: {e}")
+            import traceback
+            traceback.print_exc()
             
-        # 等待用户确认
-        input("处理完成，按回车键关闭浏览器...")
-        
-    except Exception as e:
-        print(f"运行过程中发生错误: {e}")
-    finally:
-        # 关闭浏览器
-        if driver:
+            # 如果不是最后一次重试，尝试使用新会话
+            if retry_count < max_retries:
+                print(f"尝试使用新会话重新运行 (尝试 {retry_count+1}/{max_retries+1})")
+                force_new_session = True
+                if driver:
+                    driver.quit()
+                    driver = None
+                retry_count += 1
+                continue
+            else:
+                break
+        finally:
+            # 每次重试之前，确保关闭之前的浏览器实例
+            if driver and retry_count < max_retries and not login_success:
+                driver.quit()
+                driver = None
+    
+    # 等待用户确认后关闭浏览器
+    if driver:
+        try:
+            input("处理完成，按回车键关闭浏览器...")
+        except:
+            pass
+        finally:
             driver.quit()
     
     print("程序执行完成")

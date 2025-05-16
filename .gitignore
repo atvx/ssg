@@ -101,6 +101,9 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# ChromeDriver
+chrome_user_data/
+
 # mypy
 .mypy_cache/
 .dmypy.json
