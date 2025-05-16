@@ -6,8 +6,8 @@ import json
 import argparse
 from datetime import datetime
 
-from meituan_cli import main as meituan_main
-from duowei_cli import main as duowei_main
+from scripts.meituan_cli import main as meituan_main
+from scripts.duowei_cli import main as duowei_main
 from config.settings import MEITUAN_CONFIG, DUOWEI_CONFIG
 
 def merge_results(meituan_file, duowei_file, output_file):

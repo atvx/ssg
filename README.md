@@ -25,6 +25,11 @@
 │       ├── api.py               # API交互功能
 │       └── data.py              # 数据获取和处理功能
 │
+├── scripts/                     # 命令行工具脚本
+│   ├── __init__.py
+│   ├── meituan_cli.py           # 美团数据单独获取脚本
+│   └── duowei_cli.py            # 多维数据单独获取脚本
+│
 ├── utils/                       # 通用工具模块
 │   ├── __init__.py
 │   ├── browser_utils.py         # 浏览器操作工具
@@ -32,8 +37,6 @@
 │   └── file_utils.py            # 文件操作工具
 │
 ├── main.py                      # 主入口文件，获取两个平台数据并合并
-├── meituan_cli.py               # 美团数据单独获取入口
-├── duowei_cli.py                # 多维数据单独获取入口
 └── README.md                    # 项目文档
 ```
 
@@ -95,8 +98,8 @@ python main.py [--date YYYY-MM-DD] [--output output_file.json]
 # 使用main.py
 python main.py --meituan [--date YYYY-MM-DD]
 
-# 或直接使用meituan_cli.py
-python meituan_cli.py [YYYY-MM-DD]
+# 或直接使用CLI脚本
+python -m scripts.meituan_cli [YYYY-MM-DD]
 ```
 
 ### 3. 仅获取多维系统数据
@@ -105,8 +108,8 @@ python meituan_cli.py [YYYY-MM-DD]
 # 使用main.py
 python main.py --duowei [--date YYYY-MM-DD]
 
-# 或直接使用duowei_cli.py
-python duowei_cli.py [YYYY-MM-DD]
+# 或直接使用CLI脚本
+python -m scripts.duowei_cli [YYYY-MM-DD]
 ```
 
 ## 配置选项
