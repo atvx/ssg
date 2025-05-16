@@ -15,9 +15,15 @@ warehouses = [
 import json
 import pandas as pd
 
-# 读取sales.json文件
-with open('sales.json', 'r', encoding='utf-8') as f:
-    sales_data = json.load(f)
+# 读取两个JSON文件并合并数据
+with open('sales_duowei.json', 'r', encoding='utf-8') as f:
+    sales_duowei = json.load(f)
+
+with open('sales_meituan.json', 'r', encoding='utf-8') as f:
+    sales_meituan = json.load(f)
+
+# 合并两个文件的数据
+sales_data = sales_duowei + sales_meituan
 
 # 创建一个字典，用于快速查找销售数据
 sales_dict = {item['name']: item for item in sales_data}

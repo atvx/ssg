@@ -218,7 +218,11 @@ def main(date=None):
                 })
     
     # 输出结果
-    print(json.dumps(all_warehouse_sales, ensure_ascii=False, indent=2, default=decimal_default))
+    # print(json.dumps(all_warehouse_sales, ensure_ascii=False, indent=2, default=decimal_default))
+    # 保存结果到文件
+    with open('sales_duowei.json', 'w', encoding='utf-8') as f:
+        json.dump(all_warehouse_sales, f, ensure_ascii=False, indent=2)
+    
     return all_warehouse_sales
 
 if __name__ == "__main__":

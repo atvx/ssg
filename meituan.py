@@ -43,8 +43,8 @@ LOGIN_MODE = 1
 
 # 账号登录信息
 ACCOUNT_CONFIG = {
-    "USERNAME": "13884950903",
-    "PASSWORD": "sanshige123456"
+    "USERNAME": "138****0903",
+    "PASSWORD": "******"
 }
 
 
@@ -1218,7 +1218,7 @@ def navigate_to_business_overview(driver, wait):
                     results.append(result)
                 
                 # 保存结果到文件
-                with open('warehouse_results.json', 'w', encoding='utf-8') as f:
+                with open('sales_meituan.json', 'w', encoding='utf-8') as f:
                     json.dump(results, f, ensure_ascii=False, indent=2)
             
             # 监控API
