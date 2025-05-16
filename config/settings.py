@@ -10,8 +10,8 @@ COOKIES_FILE = os.path.join(CHROME_USER_DATA_DIR, "meituan_cookies.pkl")
 MEITUAN_CONFIG = {
     "LOGIN_URL": "https://pos.meituan.com/web/rms-account#/login",
     "BUSINESS_OVERVIEW_URL": "https://pos.meituan.com/web/report/business-report?_fe_report_use_storage_query=true#/rms-report/business-report",
-    "PHONE_NUMBER": "138****0903",
-    "TARGET_ORG": "******",
+    "PHONE_NUMBER": "13884950903",
+    "TARGET_ORG": "叁石哥丰都麻辣鸡",
     "API_TIMEOUT": 30,
     "MONITOR_SCOPES": [
         r'https://pos\.meituan\.com/.*/tree/paged/query\?',
@@ -26,8 +26,8 @@ MEITUAN_CONFIG = {
 # 多维系统配置
 DUOWEI_CONFIG = {
     "BASE_URL": "http://saas.wxdw.top:8899/web_api",
-    "USER_ID": "******",
-    "DB_NAME": "******",
+    "USER_ID": "00016",
+    "DB_NAME": "ssgmlj",
     "OUTPUT_FILE": os.path.join(OUTPUT_DIR, "sales_duowei.json")
 }
 
@@ -42,6 +42,6 @@ LOGIN_MODE = 1
 
 # 账号登录信息
 ACCOUNT_CONFIG = {
-    "USERNAME": "138****0903",
-    "PASSWORD": "******"
+    "USERNAME": "13884950903",
+    "PASSWORD": "sanshige123456"
 } 
