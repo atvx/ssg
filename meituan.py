@@ -43,8 +43,8 @@ LOGIN_MODE = 1
 
 # 账号登录信息
 ACCOUNT_CONFIG = {
-    "USERNAME": "138****0903",
-    "PASSWORD": "******"
+    "USERNAME": "13884950903",
+    "PASSWORD": "sanshige123456"
 }
 
 
