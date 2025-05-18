@@ -1,10 +1,10 @@
-from decimal import Decimal
-
+import decimal
+from datetime import datetime, date
 
 def decimal_default(obj):
-    """
-    处理Decimal类型的JSON序列化
-    """
-    if isinstance(obj, Decimal):
+    """处理JSON序列化Decimal类型的默认函数"""
+    if isinstance(obj, decimal.Decimal):
         return float(obj)
-    raise TypeError("Object of type '%s' is not JSON serializable" % type(obj).__name__) 
+    elif isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")

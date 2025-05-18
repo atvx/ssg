@@ -1,17 +1,64 @@
 # 销售数据获取系统API
 
-基于FastAPI的销售数据获取系统，可从美团POS系统和多维系统获取销售数据，支持数据合并和API访问。
+这是一个基于FastAPI的销售数据获取系统API服务，用于获取并管理销售数据。
+
+## 项目结构
+
+```
+.
+├── api/                  # API路由和端点
+│   ├── endpoints/        # API端点实现
+│   └── router.py         # 路由配置
+├── celery_app/           # Celery异步任务相关
+├── config/               # 配置文件
+├── core/                 # 核心功能
+├── db/                   # 数据库模型和CRUD操作
+│   ├── crud.py           # 数据库CRUD操作
+│   └── database.py       # 数据库连接配置
+├── models/               # 数据库模型
+├── schemas/              # Pydantic模型/Schema
+├── services/             # 业务服务
+├── utils/                # 工具函数
+├── .env                  # 环境变量
+├── .gitignore            # Git忽略文件
+├── docker-compose.yml    # Docker Compose配置
+├── Dockerfile            # Docker配置
+├── main.py               # 应用入口
+└── requirements.txt      # 依赖项
+```
 
 ## 功能特性
 
-- 支持从美团POS系统获取销售数据
-- 支持从多维系统获取销售数据
-- 提供RESTful API接口
-- 支持数据合并和筛选
-- JWT认证
-- 用户管理
-- 后台任务处理
-- 基于Docker的部署
+- 用户认证与授权
+- 销售数据采集与管理
+- 任务管理与异步处理
+- API文档（Swagger UI）
+
+## 环境设置
+
+1. 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+2. 配置环境变量（编辑.env文件）
+
+## 启动应用
+
+```bash
+python main.py
+```
+
+访问 http://localhost:8000/docs 查看API文档。
+
+## Docker部署
+
+使用Docker Compose:
+
+```bash
+docker-compose up -d
+```
 
 ## 技术栈
 
@@ -97,29 +144,6 @@ docker-compose exec api alembic upgrade head
 - `GET /api/tasks/{id}` - 获取任务详情
 - `GET /api/tasks/status/{id}` - 获取任务状态
 - `DELETE /api/tasks/{id}` - 取消/删除任务
-
-## 项目结构
-
-```
-project/
-├── app/                      # FastAPI应用目录
-│   ├── api/                  # API路由
-│   ├── core/                 # 核心业务逻辑
-│   ├── models/               # 数据库模型
-│   ├── schemas/              # Pydantic验证模型
-│   ├── services/             # 业务服务
-│   ├── db/                   # 数据库
-│   ├── utils/                # 工具函数
-│   ├── config/               # 配置
-│   ├── celery_app/           # Celery配置
-│   └── main.py               # 应用入口
-├── scripts/                  # 脚本和工具
-├── .env                      # 环境变量
-├── requirements.txt          # 依赖
-├── docker-compose.yml        # Docker配置
-├── Dockerfile                # Docker构建文件
-└── README.md                 # 文档
-```
 
 ## 作者
 

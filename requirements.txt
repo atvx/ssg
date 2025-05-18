@@ -6,12 +6,13 @@ setuptools
 tqdm
 fastapi
 uvicorn[standard]
-pydantic
+pydantic>=2.0.0
 pydantic-settings
 sqlalchemy>=2.0.0
 alembic
 python-jose[cryptography]
-passlib[bcrypt]
+passlib>=1.7.4
+bcrypt
 python-multipart
 celery
 redis

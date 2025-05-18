@@ -1,0 +1,62 @@
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any, Generic, TypeVar
+from enum import Enum
+
+
+# 状态码枚举
+class StatusCode(int, Enum):
+    # 成功状态
+    OK = 200
+    CREATED = 201
+    ACCEPTED = 202
+    
+    # 客户端错误
+    BAD_REQUEST = 400
+    UNAUTHORIZED = 401
+    FORBIDDEN = 403
+    NOT_FOUND = 404
+    METHOD_NOT_ALLOWED = 405
+    REQUEST_TIMEOUT = 408
+    CONFLICT = 409
+    TOO_MANY_REQUESTS = 429
+    
+    # 服务器错误
+    INTERNAL_SERVER_ERROR = 500
+    SERVICE_UNAVAILABLE = 503
+
+
+# 错误类型枚举
+class ErrorType(str, Enum):
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
+    AUTHORIZATION_ERROR = "AUTHORIZATION_ERROR"
+    RESOURCE_ERROR = "RESOURCE_ERROR"
+    DATABASE_ERROR = "DATABASE_ERROR"
+    SERVER_ERROR = "SERVER_ERROR"
+
+
+# 错误详情项
+class ErrorDetail(BaseModel):
+    field: Optional[str] = None
+    message: str
+
+
+# 错误信息
+class ErrorInfo(BaseModel):
+    type: ErrorType
+    details: List[ErrorDetail] = []
+
+
+# 通用响应模型
+class APIResponse(BaseModel):
+    code: int = Field(200, description="HTTP状态码")
+    success: bool = Field(True, description="操作是否成功")
+    message: str = Field(..., description="响应消息")
+    data: Optional[Any] = Field(None, description="响应数据")
+    error: Optional[ErrorInfo] = Field(None, description="错误信息")
+    
+    class Config:
+        json_encoders = {
+            # 自定义编码器，如有需要
+        }
+        exclude_none = True  # 排除None值 

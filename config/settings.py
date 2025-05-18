@@ -1,47 +1,90 @@
+from pydantic_settings import BaseSettings
+from typing import Optional, List, Dict, Any, ClassVar
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 
-# 通用配置
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = BASE_DIR
-CHROME_USER_DATA_DIR = os.path.join(BASE_DIR, "chrome_user_data")
-COOKIES_FILE = os.path.join(CHROME_USER_DATA_DIR, "meituan_cookies.pkl")
+# 确保能找到.env文件
+base_dir = Path(__file__).resolve().parent.parent
+env_path = base_dir / '.env'
+load_dotenv(dotenv_path=env_path)
 
-# 美团POS配置
-MEITUAN_CONFIG = {
-    "LOGIN_URL": "https://pos.meituan.com/web/rms-account#/login",
-    "BUSINESS_OVERVIEW_URL": "https://pos.meituan.com/web/report/business-report?_fe_report_use_storage_query=true#/rms-report/business-report",
-    "PHONE_NUMBER": "13884950903",
-    "TARGET_ORG": "叁石哥丰都麻辣鸡",
-    "API_TIMEOUT": 30,
-    "MONITOR_SCOPES": [
-        r'https://pos\.meituan\.com/.*/tree/paged/query\?',
-        r'https://pos\.meituan\.com/web/api/v2/reports/combine/business-summary-page'
-    ],
-    "WAIT_TIME": 15,
-    "USER_DATA_DIR": CHROME_USER_DATA_DIR,
-    "COOKIES_FILE": COOKIES_FILE,
-    "OUTPUT_FILE": os.path.join(OUTPUT_DIR, "sales_meituan.json")
-}
 
-# 多维系统配置
-DUOWEI_CONFIG = {
-    "BASE_URL": "http://saas.wxdw.top:8899/web_api",
-    "USER_ID": "00016",
-    "DB_NAME": "ssgmlj",
-    "OUTPUT_FILE": os.path.join(OUTPUT_DIR, "sales_duowei.json")
-}
+def process_url(url):
+    """处理URL字符串，移除可能的引号"""
+    if url and isinstance(url, str):
+        url = url.strip()
+        if url.startswith('"') and url.endswith('"'):
+            url = url[1:-1]
+        return url
+    return url
 
-# 滑块验证模式: 0=自动, 1=手动
-SLIDER_VERIFY_MODE = 0
 
-# 是否监控API响应
-MONITOR_API_RESPONSE = True
+class Settings(BaseSettings):
+    # 应用配置
+    APP_NAME: str = "销售数据获取系统"
+    API_V1_STR: str = "/api"
+    DEBUG: bool = True
+    
+    # 安全配置
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-for-development-only")
+    ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    
+    # 数据库配置 - 直接设置默认值，而不依赖于环境变量
+    DATABASE_URL: str = os.getenv("DATABASE_URL")
+    if not DATABASE_URL:
+        DATABASE_URL = "mysql+pymysql://qian:qian163@124.221.92.150:3306/ssgmlj"
+    
+    # Redis配置
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://:163000@124.221.92.150:6378/0")
+    
+    # Celery配置
+    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://:163000@124.221.92.150:6378/0")
+    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "redis://:163000@124.221.92.150:6378/0")
+    
+    # 美团POS配置
+    MEITUAN_CONFIG: Dict[str, str] = {
+        "LOGIN_URL": "https://pos.meituan.com/web/rms-account#/login",
+        "BUSINESS_OVERVIEW_URL": "https://pos.meituan.com/web/rms-report/#/business-overview",
+        "PHONE_NUMBER": os.getenv("MEITUAN_PHONE", ""),
+        "TARGET_ORG": os.getenv("MEITUAN_ORG", ""),
+    }
+    
+    # 滑块验证模式: 0=自动, 1=手动
+    SLIDER_VERIFY_MODE: int = int(os.getenv("SLIDER_VERIFY_MODE", "0"))
+    
+    # 登录方式: 0=手机号登录, 1=账号登录
+    LOGIN_MODE: int = int(os.getenv("LOGIN_MODE", "1"))
+    
+    # 账号登录信息
+    ACCOUNT_CONFIG: Dict[str, str] = {
+        "USERNAME": os.getenv("MEITUAN_USERNAME", ""),
+        "PASSWORD": os.getenv("MEITUAN_PASSWORD", "")
+    }
+    
+    # 多维系统配置
+    DUOWEI_CONFIG: Dict[str, str] = {
+        "BASE_URL": os.getenv("DUOWEI_BASE_URL", "http://saas.wxdw.top:8899/web_api"),
+        "USER_ID": os.getenv("DUOWEI_USER_ID", "00016"),
+        "DB_NAME": os.getenv("DUOWEI_DB_NAME", "ssgmlj"),
+    }
+    
+    # 浏览器配置
+    CHROME_USER_DATA_DIR: str = "chrome_user_data"
+    HEADLESS: bool = os.getenv("HEADLESS", "False").lower() == "true"
 
-# 登录方式: 0=手机号登录, 1=账号登录
-LOGIN_MODE = 1
 
-# 账号登录信息
-ACCOUNT_CONFIG = {
-    "USERNAME": "13884950903",
-    "PASSWORD": "sanshige123456"
-} 
+settings = Settings()
+
+# 导出常用配置变量，以支持直接导入
+MEITUAN_CONFIG = settings.MEITUAN_CONFIG
+DUOWEI_CONFIG = settings.DUOWEI_CONFIG
+ACCOUNT_CONFIG = settings.ACCOUNT_CONFIG
+SLIDER_VERIFY_MODE = settings.SLIDER_VERIFY_MODE
+LOGIN_MODE = settings.LOGIN_MODE
+DATABASE_URL = settings.DATABASE_URL
+REDIS_URL = settings.REDIS_URL
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES

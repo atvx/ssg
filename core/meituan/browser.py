@@ -4,7 +4,7 @@ from seleniumwire import webdriver as wire_webdriver
 import os
 import time
 
-from config.settings import SLIDER_VERIFY_MODE, MONITOR_API_RESPONSE
+from config.settings import settings
 from utils.file_utils import kill_chrome_processes
 
 
@@ -31,7 +31,7 @@ def init_chrome_driver(config, force_new_session=False):
     if use_user_data_dir:
         try:
             # 检查默认用户数据目录是否存在
-            user_data_dir = os.path.abspath(config["USER_DATA_DIR"])
+            user_data_dir = os.path.abspath(config.get("USER_DATA_DIR", settings.CHROME_USER_DATA_DIR))
             if not os.path.exists(user_data_dir):
                 os.makedirs(user_data_dir, exist_ok=True)
                 print(f"创建用户数据目录: {user_data_dir}")
@@ -52,13 +52,14 @@ def init_chrome_driver(config, force_new_session=False):
     
     # 首次尝试启动浏览器
     try:
-        if MONITOR_API_RESPONSE:
+        monitor_api = config.get("MONITOR_API_RESPONSE", False)
+        if monitor_api:
             seleniumwire_options = {
                 'disable_encoding': True,
                 'suppress_connection_errors': True
             }
             driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)
-            driver.scopes = config["MONITOR_SCOPES"]
+            driver.scopes = config.get("MONITOR_SCOPES", [])
         else:
             driver = webdriver.Chrome(options=chrome_options)
             
@@ -100,13 +101,14 @@ def init_chrome_driver(config, force_new_session=False):
                 
                 print("使用新会话模式启动Chrome...")
                 
-                if MONITOR_API_RESPONSE:
+                monitor_api = config.get("MONITOR_API_RESPONSE", False)
+                if monitor_api:
                     seleniumwire_options = {
                         'disable_encoding': True,
                         'suppress_connection_errors': True
                     }
                     driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)
-                    driver.scopes = config["MONITOR_SCOPES"]
+                    driver.scopes = config.get("MONITOR_SCOPES", [])
                 else:
                     driver = webdriver.Chrome(options=chrome_options)
                 
