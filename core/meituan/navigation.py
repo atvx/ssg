@@ -116,4 +116,82 @@ def select_date(driver, date_str):
     """)
     
     # 等待页面刷新
-    time.sleep(2) 
+    time.sleep(2)
+
+
+def select_date_range(driver, wait, start_date, end_date):
+    """设置日期范围
+    
+    Args:
+        driver: WebDriver实例
+        wait: WebDriverWait实例
+        start_date: 开始日期，格式为YYYY-MM-DD
+        end_date: 结束日期，格式为YYYY-MM-DD
+        
+    Returns:
+        bool: 是否成功设置日期范围
+    """
+    try:
+        # 格式化日期，确保符合YYYY-MM-DD格式
+        from datetime import datetime
+        try:
+            # 尝试解析日期字符串
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+            
+            # 转换为UI需要的格式
+            start_date_ui = start_date_obj.strftime("%Y/%m/%d")
+            end_date_ui = end_date_obj.strftime("%Y/%m/%d")
+        except ValueError:
+            print(f"无效的日期格式，需要YYYY-MM-DD。收到: start_date={start_date}, end_date={end_date}")
+            return False
+        
+        # 使用直接的JavaScript方法设置日期选择器的值
+        script = f"""
+        function setDateRange(startDate, endDate) {{
+            // 找到日期范围选择器
+            const inputs = document.querySelectorAll('.ant-calendar-picker-input');
+            if (!inputs || inputs.length < 2) {{
+                console.error('未找到日期选择器输入框');
+                return false;
+            }}
+            
+            // 设置开始日期
+            const startInput = inputs[0];
+            startInput.value = '{start_date_ui}';
+            startInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            startInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            
+            // 设置结束日期
+            const endInput = inputs[1];
+            endInput.value = '{end_date_ui}';
+            endInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            endInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            
+            // 尝试自动点击查询按钮
+            setTimeout(() => {{
+                const queryBtn = [...document.querySelectorAll('button.ant-btn-primary')].find(btn => 
+                    btn.textContent.trim() === '查询');
+                if (queryBtn) {{
+                    queryBtn.click();
+                    console.log('自动点击了查询按钮');
+                }}
+            }}, 500);
+            
+            return true;
+        }}
+        
+        return setDateRange('{start_date_ui}', '{end_date_ui}');
+        """
+        
+        result = driver.execute_script(script)
+        
+        # 等待一下，确保日期选择生效
+        import time
+        time.sleep(2)
+        
+        print(f"日期范围设置: {start_date_ui} 至 {end_date_ui}, 结果: {'成功' if result else '失败'}")
+        return result
+    except Exception as e:
+        print(f"设置日期范围时出错: {e}")
+        return False 

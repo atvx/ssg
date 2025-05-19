@@ -13,8 +13,8 @@ from urllib.parse import urlencode, quote
 
 from core.meituan.auth import login_with_phone, login_with_account, select_organization, check_login, choose_organization
 from core.meituan.browser import init_chrome_driver
-from core.meituan.navigation import navigate_to_business_overview, navigate_to_report_center
-from core.meituan.data import get_all_meituan_data
+from core.meituan.navigation import navigate_to_business_overview, navigate_to_report_center, select_date_range
+from core.meituan.data import get_all_meituan_data, perform_advanced_search
 from utils.browser_utils import hide_all_popups, handle_iframe_slider, monitor_api_response
 
 from config.settings import settings
@@ -47,23 +47,69 @@ def fetch_meituan_data_task(self):
         self.retry(exc=e, countdown=retry_countdown)
 
 
-def fetch_meituan_data(db: Session) -> Dict[str, Any]:
-    """获取美团POS销售数据
+def fetch_meituan_data(db: Session, date_params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """获取美团销售数据
     
     Args:
         db: 数据库会话
+        date_params: 日期参数字典，包含start_date和end_date（格式为YYYY-MM-DD）
         
     Returns:
-        Dict[str, Any]: 提取的数据
+        Dict[str, Any]: 提取的数据，格式为：
+        {
+            "success": true,
+            "message": "获取数据成功",
+            "start_date": "2025-05-19",
+            "end_date": "2025-05-19",
+            "platform": "meituan",
+            "data": [
+                {
+                    "incomeAmt": 2053.5,
+                    "salesCartCount": 8,
+                    "avgIncomeAmt": 256.69,
+                    "name": "昆明龙泉仓"
+                },
+                ...
+            ]
+        }
     """
     driver = None
     task_result = {
         "success": False,
         "message": "",
-        "data": None,
-        "verification_task_id": None,
-        "verification_needed": False
+        "platform": "meituan",
+        "data": []
     }
+    
+    # 处理日期参数
+    today = datetime.now().date().isoformat()
+    start_date = today
+    end_date = today
+    
+    if date_params:
+        # 应用日期处理规则
+        param_start = date_params.get("start_date")
+        param_end = date_params.get("end_date")
+        
+        if param_start and not param_end:
+            # start_date有值，end_date为空：使用今天作为end_date
+            start_date = param_start
+            # end_date保持为today
+        elif param_end and not param_start:
+            # end_date有值，start_date为空：使start_date与end_date一致
+            start_date = param_end
+            end_date = param_end
+        elif param_start and param_end:
+            # 两者都有值：直接使用传入的值
+            start_date = param_start
+            end_date = param_end
+        # 两者都为空的情况已经由默认值处理
+    
+    # 将日期信息添加到结果中
+    task_result["start_date"] = start_date
+    task_result["end_date"] = end_date
+    
+    logger.info(f"获取美团数据，日期范围: {start_date} 至 {end_date}")
     
     try:
         # 初始化浏览器，开启API监控
@@ -129,6 +175,16 @@ def fetch_meituan_data(db: Session) -> Dict[str, Any]:
                 logger.info("成功导航到业务概览页面")
                 # 隐藏弹窗
                 hide_all_popups(driver)
+                
+                # 设置日期范围
+                logger.info(f"设置查询日期范围: {start_date} 至 {end_date}")
+                try:
+                    date_set = select_date_range(driver, wait, start_date, end_date)
+                    if not date_set:
+                        logger.warning("日期范围设置可能失败，将使用默认日期")
+                except Exception as e:
+                    logger.error(f"设置日期范围时出错: {e}")
+                    logger.warning("将使用默认日期进行查询")
             else:
                 logger.error("导航到业务概览页面失败")
                 task_result["message"] = "无法导航到业务概览页面"
@@ -157,7 +213,7 @@ def fetch_meituan_data(db: Session) -> Dict[str, Any]:
         warehouse_response = monitor_api_response(
             driver,
             "/tree/paged/query",  # URL匹配模式
-            timeout=60,  # 超时时间
+            timeout=120,  # 超时时间
             methods=['POST']
         )
         
@@ -167,7 +223,7 @@ def fetch_meituan_data(db: Session) -> Dict[str, Any]:
             warehouse_response = monitor_api_response(
                 driver,
                 "warehouse",  # 尝试包含warehouse的URL
-                timeout=30,
+                timeout=120,
                 methods=['POST', 'GET']
             )
             
@@ -187,13 +243,82 @@ def fetch_meituan_data(db: Session) -> Dict[str, Any]:
             
         logger.info(f"成功提取 {len(warehouses)} 个仓库")
         
+        # 查询每个仓库的销售数据
+        logger.info("开始查询各仓库销售数据...")
+        sales_results = []
+        
+        # 对每个仓库执行高级查询
+        try:
+            from tqdm import tqdm
+            # 创建config字典供perform_advanced_search使用
+            api_config = {
+                "API_TIMEOUT": 60,  # API超时时间 
+                "BUSINESS_SUMMARY_URL": "https://pos.meituan.com/web/api/v2/reports/combine/business-summary-page",
+                "OUTPUT_FILE": "sales_meituan.json"
+            }
+            
+            # 修改core/meituan/data.py中perform_advanced_search函数的实现
+            def patched_monitor_api_response(driver, url, max_wait_time=None, methods=None, start_time=None, **kwargs):
+                """包装monitor_api_response函数，适配参数不匹配的问题"""
+                # 将max_wait_time转换为timeout参数
+                timeout = max_wait_time if max_wait_time is not None else 60
+                return monitor_api_response(driver, url, timeout=timeout, methods=methods, start_time=start_time, **kwargs)
+            
+            # 临时替换monitor_api_response函数
+            import core.meituan.data
+            original_monitor_api_response = core.meituan.data.monitor_api_response
+            core.meituan.data.monitor_api_response = patched_monitor_api_response
+            
+            for name in tqdm(warehouses, desc="处理进度", unit="仓", ncols=100, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"):
+                logger.info(f"正在查询仓库【{name}】的销售数据")
+                
+                # 强制清除所有请求记录，确保每次查询都是全新的
+                if hasattr(driver, 'requests'):
+                    driver.requests.clear()
+                
+                # 重新加载页面，确保每次查询都是全新的状态
+                driver.get(settings.MEITUAN_CONFIG["BUSINESS_OVERVIEW_URL"])
+                time.sleep(3)  # 等待页面完全加载
+                
+                # 执行高级查询
+                result = perform_advanced_search(driver, wait, target_org=name, config=api_config)
+                
+                # 验证结果是否有效
+                if result["incomeAmt"] == 0 and result["salesCartCount"] == 0:
+                    # 如果数据为0，尝试再查询一次
+                    logger.warning(f"仓库【{name}】查询结果为空，尝试再次查询...")
+                    time.sleep(2)
+                    
+                    # 重新清除请求记录
+                    if hasattr(driver, 'requests'):
+                        driver.requests.clear()
+                    
+                    # 再次执行查询
+                    result = perform_advanced_search(driver, wait, target_org=name, config=api_config)
+                
+                sales_results.append(result)
+                logger.info(f"仓库【{name}】销售数据: 收入={result['incomeAmt']}元, 销售车辆={result['salesCartCount']}, 平均收入={result['avgIncomeAmt']}元")
+                
+                # 添加延迟，确保下一次查询不会受到影响
+                time.sleep(1)
+                
+            # 恢复原始函数
+            core.meituan.data.monitor_api_response = original_monitor_api_response
+            
+        except Exception as e:
+            logger.error(f"查询销售数据时出错: {e}")
+            logger.error(traceback.format_exc())
+            # 即使查询过程中出错，也返回已获取的数据
+            if not sales_results:
+                task_result["message"] = f"查询销售数据时出错: {str(e)}"
+                return task_result
+        
         # 成功返回
         task_result["success"] = True
         task_result["message"] = "数据获取成功"
-        task_result["data"] = {
-            "warehouses": warehouses
-        }
+        task_result["data"] = sales_results
         
+        print(task_result)
         return task_result
         
     except Exception as e:
@@ -291,34 +416,51 @@ def get_all_meituan_data(db: Session) -> Dict[str, Any]:
         sales_data = fetch_meituan_data(db)
         
         # 验证是否需要手机验证码
-        if not sales_data["success"] and sales_data.get("verification_needed", False):
-            return {
-                "success": False,
-                "message": "需要手机验证码验证",
-                "verification_task_id": sales_data.get("verification_task_id")
-            }
-        
-        # 检查是否获取成功
         if not sales_data["success"]:
             return {
                 "success": False,
-                "message": f"获取美团数据失败: {sales_data['message']}"
+                "message": f"获取美团数据失败: {sales_data['message']}",
+                "platform": "meituan"
             }
             
-        # TODO: 处理获取到的数据
+        # 获取销售结果数据
+        sales_results = sales_data.get("data", [])
         
+        # 计算总销售额和总销售数量
+        total_income = sum(item.get("incomeAmt", 0) for item in sales_results)
+        total_sales_count = sum(item.get("salesCartCount", 0) for item in sales_results)
+        
+        # 计算平均销售额（如果有销售）
+        avg_income = 0
+        if total_sales_count > 0:
+            avg_income = total_income / total_sales_count
+            
+        # 构建结果摘要
+        summary = {
+            "warehouses_count": len(sales_results),
+            "total_income": round(total_income, 2),
+            "total_sales_count": total_sales_count,
+            "avg_income": round(avg_income, 2)
+        }
+        
+        # logger.info(f"美团数据同步完成: {summary}")
+        
+        # 返回与fetch_meituan_data相同格式的数据，增加摘要信息
         return {
-            "success": True,
-            "message": "数据同步成功",
-            "data_summary": {
-                "warehouses": len(sales_data.get("data", {}).get("warehouses", []))
-            }
+            "success": sales_data["success"],
+            "message": sales_data["message"],
+            "platform": "meituan",
+            "start_date": sales_data.get("start_date", ""),
+            "end_date": sales_data.get("end_date", ""),
+            "data": sales_results,
+            "summary": summary
         }
     except Exception as e:
         logger.error(f"同步美团数据出错: {e}")
         return {
             "success": False,
-            "message": f"同步数据出错: {str(e)}"
+            "message": f"同步数据出错: {str(e)}",
+            "platform": "meituan"
         }
 
 

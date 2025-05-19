@@ -55,17 +55,25 @@ def save_sales_records(records, platform, date_str):
 
 
 @celery_app.task(bind=True)
-def fetch_meituan_task(self, task_id: int, date_str: str = None):
+def fetch_meituan_task(self, task_id: int, start_date: str = None, end_date: str = None):
     """获取美团数据的后台任务"""
     try:
         update_task_status(task_id, "running", 10)
         
+        # 使用日期范围获取数据
+        date_params = {
+            "start_date": start_date,
+            "end_date": end_date
+        }
+        
         # 获取数据
-        data = fetch_meituan_data(date_str)
+        data = fetch_meituan_data(date_params)
         update_task_status(task_id, "running", 50)
         
         # 保存数据到数据库
-        save_sales_records(data, "meituan", date_str or datetime.now().strftime("%Y-%m-%d"))
+        # 使用start_date作为默认日期，如果未提供则使用当前日期
+        reference_date = start_date or datetime.now().strftime("%Y-%m-%d")
+        save_sales_records(data, "meituan", reference_date)
         
         # 更新任务状态
         update_task_status(task_id, "completed", 100, result=data)
@@ -78,22 +86,35 @@ def fetch_meituan_task(self, task_id: int, date_str: str = None):
 
 
 @celery_app.task(bind=True)
-def fetch_duowei_task(self, task_id: int, date_str: str = None):
+def fetch_duowei_task(self, task_id: int, start_date: str = None, end_date: str = None):
     """获取多维数据的后台任务"""
     try:
         update_task_status(task_id, "running", 10)
         
+        # 使用日期范围获取数据
+        date_params = {
+            "start_date": start_date,
+            "end_date": end_date
+        }
+        
         # 获取数据
-        data = fetch_duowei_data(date_str)
+        result = fetch_duowei_data(date_params)
         update_task_status(task_id, "running", 50)
         
+        # 检查是否获取成功
+        if not result["success"]:
+            update_task_status(task_id, "failed", 0, error=result["message"])
+            return {"status": "error", "error": result["message"]}
+        
         # 保存数据到数据库
-        save_sales_records(data, "duowei", date_str or datetime.now().strftime("%Y-%m-%d"))
+        # 使用start_date作为默认日期，如果未提供则使用当前日期
+        reference_date = start_date or datetime.now().strftime("%Y-%m-%d")
+        save_sales_records(result["data"], "duowei", reference_date)
         
         # 更新任务状态
-        update_task_status(task_id, "completed", 100, result=data)
+        update_task_status(task_id, "completed", 100, result=result)
         
-        return {"status": "success", "data": data}
+        return {"status": "success", "data": result}
     except Exception as e:
         logger.error(f"获取多维数据失败: {str(e)}")
         update_task_status(task_id, "failed", 0, error=str(e))
@@ -101,48 +122,63 @@ def fetch_duowei_task(self, task_id: int, date_str: str = None):
 
 
 @celery_app.task(bind=True)
-def fetch_all_data_task(self, task_id: int, date_str: str = None):
+def fetch_all_data_task(self, task_id: int, start_date: str = None, end_date: str = None):
     """获取所有平台数据的后台任务"""
     try:
         update_task_status(task_id, "running", 10)
         
+        # 准备日期参数
+        date_params = {
+            "start_date": start_date,
+            "end_date": end_date
+        }
+        
         # 获取美团数据
-        meituan_data = fetch_meituan_data(date_str)
+        meituan_result = fetch_meituan_data(date_params)
         update_task_status(task_id, "running", 40)
         
         # 获取多维数据
-        duowei_data = fetch_duowei_data(date_str)
+        duowei_result = fetch_duowei_data(date_params)
         update_task_status(task_id, "running", 70)
         
-        # 修复数据合并逻辑，确保数据类型兼容
-        # 检查meituan_data的类型和结构
-        if isinstance(meituan_data, dict):
-            # 如果是字典，提取其中的列表数据
-            meituan_items = meituan_data.get("data", {}).get("warehouses", [])
-        elif isinstance(meituan_data, list):
-            # 如果已经是列表，直接使用
-            meituan_items = meituan_data
-        else:
-            # 其他情况，使用空列表
-            logger.warning(f"美团数据格式不符合预期: {type(meituan_data)}")
-            meituan_items = []
-            
-        # 确保duowei_data是列表类型
-        if not isinstance(duowei_data, list):
-            logger.warning(f"多维数据格式不符合预期: {type(duowei_data)}")
-            duowei_data = []
-            
-        # 合并数据，避免使用+操作符
-        all_data = []
-        all_data.extend(meituan_items)
-        all_data.extend(duowei_data)
+        # 获取数据列表
+        meituan_items = meituan_result.get("data", []) if isinstance(meituan_result, dict) else []
+        duowei_items = duowei_result.get("data", []) if isinstance(duowei_result, dict) else []
+        
+        # 检查数据完整性
+        if not meituan_result.get("success", False):
+            logger.warning(f"美团数据获取失败: {meituan_result.get('message', '未知错误')}")
+        
+        if not duowei_result.get("success", False):
+            logger.warning(f"多维数据获取失败: {duowei_result.get('message', '未知错误')}")
+        
+        # 合并数据
+        all_data = {
+            "success": meituan_result.get("success", False) or duowei_result.get("success", False),
+            "message": "数据获取部分成功" if (meituan_result.get("success", False) or duowei_result.get("success", False)) else "所有数据源获取失败",
+            "start_date": start_date or datetime.now().strftime("%Y-%m-%d"),
+            "end_date": end_date or datetime.now().strftime("%Y-%m-%d"),
+            "data": {
+                "meituan": {
+                    "success": meituan_result.get("success", False),
+                    "message": meituan_result.get("message", ""),
+                    "data": meituan_items
+                },
+                "duowei": {
+                    "success": duowei_result.get("success", False),
+                    "message": duowei_result.get("message", ""),
+                    "data": duowei_items
+                }
+            }
+        }
         
         # 保存数据到数据库
-        today = date_str or datetime.now().strftime("%Y-%m-%d")
+        # 使用start_date作为默认日期，如果未提供则使用当前日期
+        reference_date = start_date or datetime.now().strftime("%Y-%m-%d")
         if meituan_items:
-            save_sales_records(meituan_items, "meituan", today)
-        if duowei_data:
-            save_sales_records(duowei_data, "duowei", today)
+            save_sales_records(meituan_items, "meituan", reference_date)
+        if duowei_items:
+            save_sales_records(duowei_items, "duowei", reference_date)
         
         # 更新任务状态
         update_task_status(task_id, "completed", 100, result=all_data)

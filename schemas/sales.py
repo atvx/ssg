@@ -39,7 +39,8 @@ class SalesQuery(BaseModel):
 
 class FetchDataRequest(BaseModel):
     """获取数据请求模型"""
-    days: int = Field(7, description="获取多少天的数据")
+    start_date: Optional[str] = Field(None, description="开始日期（格式 YYYY-MM-DD），为空时默认当天")
+    end_date: Optional[str] = Field(None, description="结束日期（格式 YYYY-MM-DD），为空时默认当天")
     platform: Optional[str] = Field(None, description="平台筛选")
 
 

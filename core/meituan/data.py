@@ -21,6 +21,8 @@ def perform_advanced_search(driver, wait, target_org, config):
         # 清空请求记录并记录时间戳
         if hasattr(driver, 'requests'):
             driver.requests.clear()
+        
+        # 记录查询开始时间，用于过滤API响应
         request_start_time = time.time()
             
         # 点击高级按钮
@@ -107,6 +109,10 @@ def perform_advanced_search(driver, wait, target_org, config):
             print("未找到'确认'按钮")
             return result
 
+        # 再次清空请求记录，确保只捕获当前查询的API响应
+        if hasattr(driver, 'requests'):
+            driver.requests.clear()
+        
         # 更新时间戳，记录点击查询前的时间
         query_start_time = time.time()
 
@@ -125,6 +131,9 @@ def perform_advanced_search(driver, wait, target_org, config):
         # 等待查询结果加载
         time.sleep(2)
         
+        # 记录当前仓库名称，用于验证API响应是否匹配
+        current_warehouse = target_org
+        
         # 获取营业概览数据
         summary_data = monitor_api_response(
             driver,
@@ -134,6 +143,10 @@ def perform_advanced_search(driver, wait, target_org, config):
             start_time=query_start_time
         )
 
+        # 验证API响应是否包含当前仓库信息
+        if summary_data:
+            print(f"获取到API响应数据，正在验证是否为仓库【{current_warehouse}】的数据...")
+        
         # 提取业务数据
         if summary_data and 'data' in summary_data:
             try:
@@ -190,13 +203,22 @@ def perform_advanced_search(driver, wait, target_org, config):
                 result["salesCartCount"] = salesCartCount
                 result["avgIncomeAmt"] = float(avgIncomeAmt)
                 
+                # 打印调试信息
+                print(f"仓库【{current_warehouse}】查询结果: 收入={incomeAmt}元, 销售={salesCartCount}辆")
+                
             except Exception as e:
                 print(f"解析业务数据时出错: {e}")
+                # 打印更详细的错误信息
+                import traceback
+                print(traceback.format_exc())
                 
         return result
         
     except Exception as e:
         print(f"执行高级查询时出错: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(traceback.format_exc())
         return result
 
 

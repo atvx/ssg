@@ -35,7 +35,7 @@ def js_click(driver, selector, wait_time=5):
         return False
 
 
-def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods=None, payload_pattern=None):
+def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods=None, payload_pattern=None, start_time=None):
     """监控页面API响应，使用selenium-wire捕获HTTP请求
     
     Args:
@@ -45,6 +45,7 @@ def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods
         callback: 回调函数，接收响应数据作为参数
         methods: 要匹配的HTTP方法列表，例如 ['GET', 'POST']
         payload_pattern: 请求体匹配模式，字典类型，用于匹配请求正文中的关键字段
+        start_time: 开始时间戳，只处理此时间之后的请求
         
     Returns:
         dict: API响应数据，超时返回None
@@ -56,15 +57,28 @@ def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods
             logger.warning("警告: 当前driver不是selenium-wire创建的，无法捕获HTTP请求")
             return None
         
+        # 如果没有提供开始时间，使用当前时间
+        if start_time is None:
+            start_time = time.time()
+            
+        logger.info(f"开始监控API响应，URL模式: {url_pattern}, 开始时间: {start_time}")
+        
         # 清除之前的请求记录
         driver.requests.clear()
         
-        start_time = time.time()
-        while time.time() - start_time < timeout:
+        monitor_start_time = time.time()
+        while time.time() - monitor_start_time < timeout:
             # 获取所有请求
             for request in driver.requests:
                 if not request.response:
                     continue  # 跳过未完成的请求
+                
+                # 检查请求时间（如果可用）
+                if hasattr(request, 'date') and request.date:
+                    req_timestamp = request.date.timestamp()
+                    if req_timestamp < start_time:
+                        logger.debug(f"跳过旧请求: {request.url}, 时间: {req_timestamp} < {start_time}")
+                        continue
                 
                 # 检查URL匹配
                 url_matched = url_pattern in request.url if isinstance(url_pattern, str) else bool(re.search(url_pattern, request.url))
@@ -113,7 +127,7 @@ def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods
                             body_text = request.body
                             if isinstance(body_text, bytes):
                                 body_text = body_text.decode('utf-8')
-                            logger.info(f"请求体: {body_text}")
+                            logger.debug(f"请求体: {body_text[:200]}...")
                         
                         # 解析响应体为JSON
                         response_body = request.response.body
@@ -123,6 +137,10 @@ def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods
                         try:
                             response_data = json.loads(response_body)
                             
+                            # 记录响应时间
+                            response_time = time.time()
+                            logger.info(f"API响应获取成功，耗时: {response_time - start_time:.2f}秒")
+                            
                             # 如果有回调函数，调用它
                             if callback and callable(callback):
                                 callback(response_data)
@@ -130,7 +148,7 @@ def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods
                             return response_data
                         except json.JSONDecodeError as e:
                             logger.warning(f"响应体解析JSON失败: {e}")
-                            logger.info(f"原始响应内容: {response_body[:200]}...")
+                            logger.debug(f"原始响应内容: {response_body[:200]}...")
                             continue
                     except Exception as e:
                         logger.warning(f"处理响应时出错: {str(e)}")
@@ -145,7 +163,9 @@ def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods
             if not request.response:
                 continue
                 
-            logger.info(f"{i+1}. {request.method} {request.url}")
+            logger.debug(f"{i+1}. {request.method} {request.url}")
+            if hasattr(request, 'date') and request.date:
+                logger.debug(f"   时间: {request.date.isoformat()}")
             if request.body:
                 body_text = request.body
                 if isinstance(body_text, bytes):
@@ -153,7 +173,7 @@ def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods
                         body_text = body_text.decode('utf-8')
                     except:
                         body_text = "<二进制数据>"
-                logger.info(f"   请求体: {body_text[:200]}{'...' if len(str(body_text)) > 200 else ''}")
+                logger.debug(f"   请求体: {body_text[:200]}{'...' if len(str(body_text)) > 200 else ''}")
         
         return None
     except Exception as e:
