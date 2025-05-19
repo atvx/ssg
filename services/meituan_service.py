@@ -72,7 +72,7 @@ def fetch_meituan_data(db: Session) -> Dict[str, Any]:
             "USER_DATA_DIR": settings.CHROME_USER_DATA_DIR,
             "HEADLESS": False,
             "MONITOR_API_RESPONSE": True,
-            "MONITOR_SCOPES": [".*reportcenter.*", ".*report.*", ".*business.*"]
+            "MONITOR_SCOPES": [".*pos\.meituan\.com.*"]  # 匹配所有美团POS域名下的请求
         }
         
         # 使用配置字典初始化浏览器
@@ -144,11 +144,20 @@ def fetch_meituan_data(db: Session) -> Dict[str, Any]:
         # 从API获取仓库列表
         logger.info("获取仓库列表...")
         
-        # 更新API监控参数，同时匹配多种可能的URL模式
+        # 清除之前的请求记录
+        if hasattr(driver, 'requests'):
+            driver.requests.clear()
+        
+        # 在页面上触发API请求
+        logger.info("正在导航到报表中心，触发API请求...")
+        driver.get(settings.MEITUAN_CONFIG["BUSINESS_OVERVIEW_URL"])
+        time.sleep(5)  # 等待页面加载和API请求发送
+        
+        # 使用selenium-wire监控API响应
         warehouse_response = monitor_api_response(
             driver,
-            "/tree/paged/query",  # 精确匹配URL的一部分
-            timeout=60,  # 增加超时时间
+            "/tree/paged/query",  # URL匹配模式
+            timeout=60,  # 超时时间
             methods=['POST']
         )
         

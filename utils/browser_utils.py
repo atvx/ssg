@@ -5,7 +5,11 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 import re
+import json
+import logging
 
+# 配置日志
+logger = logging.getLogger(__name__)
 
 def js_click(driver, selector, wait_time=5):
     """使用JavaScript点击元素，避免常规点击问题
@@ -31,122 +35,129 @@ def js_click(driver, selector, wait_time=5):
         return False
 
 
-def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods=None):
-    """监控页面API响应
+def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods=None, payload_pattern=None):
+    """监控页面API响应，使用selenium-wire捕获HTTP请求
     
     Args:
-        driver: Selenium驱动器
+        driver: Selenium-Wire驱动器
         url_pattern: URL匹配模式
         timeout: 超时时间（秒）
         callback: 回调函数，接收响应数据作为参数
         methods: 要匹配的HTTP方法列表，例如 ['GET', 'POST']
+        payload_pattern: 请求体匹配模式，字典类型，用于匹配请求正文中的关键字段
         
     Returns:
         dict: API响应数据，超时返回None
     """
     try:
-        # 如果driver没有_apiMonitor属性，初始化一个
-        if not hasattr(driver, '_apiMonitor'):
-            # 注入API监控脚本
-            script = """
-            // 创建API监控对象
-            window._apiMonitor = {
-                responses: {},
-                observer: null
-            };
-            
-            // 拦截XHR请求
-            (function(open) {
-                XMLHttpRequest.prototype.open = function(method, url) {
-                    this._apiMonitorMethod = method;
-                    this._apiMonitorUrl = url;
-                    return open.apply(this, arguments);
-                };
-            })(XMLHttpRequest.prototype.open);
-            
-            (function(send) {
-                XMLHttpRequest.prototype.send = function() {
-                    var xhr = this;
-                    xhr.addEventListener('load', function() {
-                        try {
-                            var responseText = xhr.responseText;
-                            // 尝试解析JSON
-                            if (responseText && responseText.trim() !== '') {
-                                var jsonResponse = JSON.parse(responseText);
-                                window._apiMonitor.responses[xhr._apiMonitorUrl] = {
-                                    data: jsonResponse,
-                                    method: xhr._apiMonitorMethod,
-                                    timestamp: new Date().getTime()
-                                };
-                            }
-                        } catch(e) {
-                            // 忽略非JSON响应
-                            console.log('API监控：无法解析响应', e);
-                        }
-                    });
-                    return send.apply(this, arguments);
-                };
-            })(XMLHttpRequest.prototype.send);
-            
-            // 拦截Fetch请求
-            (function(fetch) {
-                window.fetch = function(url, options) {
-                    return fetch.apply(this, [url, options]).then(function(response) {
-                        // 克隆响应以便多次读取
-                        var resClone = response.clone();
-                        try {
-                            resClone.json().then(function(jsonData) {
-                                window._apiMonitor.responses[url] = {
-                                    data: jsonData,
-                                    method: options ? options.method || 'GET' : 'GET',
-                                    timestamp: new Date().getTime()
-                                };
-                            });
-                        } catch(e) {
-                            // 忽略非JSON响应
-                        }
-                        return response;
-                    });
-                };
-            })(window.fetch);
-            """
-            driver.execute_script(script)
-            print("API监控已初始化")
+        # 确认是否使用的是selenium-wire的driver
+        import inspect
+        if 'seleniumwire' not in inspect.getmodule(driver.__class__).__name__:
+            logger.warning("警告: 当前driver不是selenium-wire创建的，无法捕获HTTP请求")
+            return None
+        
+        # 清除之前的请求记录
+        driver.requests.clear()
         
         start_time = time.time()
         while time.time() - start_time < timeout:
-            # 获取当前所有记录的响应
-            responses = driver.execute_script("return window._apiMonitor.responses;")
-            
-            # 检查是否有匹配的URL和方法
-            for url, response in responses.items():
-                # 改进的URL匹配逻辑，使用正则表达式以更灵活地匹配URL
-                url_matched = url_pattern in url if isinstance(url_pattern, str) else bool(re.search(url_pattern, url))
+            # 获取所有请求
+            for request in driver.requests:
+                if not request.response:
+                    continue  # 跳过未完成的请求
                 
-                # 检查请求方法是否匹配
+                # 检查URL匹配
+                url_matched = url_pattern in request.url if isinstance(url_pattern, str) else bool(re.search(url_pattern, request.url))
+                
+                # 检查请求方法匹配
                 method_matched = True
-                if methods and response.get('method'):
-                    method_matched = response.get('method').upper() in [m.upper() for m in methods]
+                if methods:
+                    method_matched = request.method.upper() in [m.upper() for m in methods]
                 
-                if url_matched and method_matched:
-                    # 如果有回调函数，调用它
-                    data = response.get('data')
-                    if callback and callable(callback):
-                        callback(data)
-                    print(f"匹配到API响应: {url}")
-                    return data
+                # 检查请求体匹配
+                payload_matched = True
+                if payload_pattern and isinstance(payload_pattern, dict):
+                    try:
+                        # 获取请求体，尝试解析为JSON
+                        request_body = request.body
+                        if request_body:
+                            if isinstance(request_body, bytes):
+                                request_body = request_body.decode('utf-8')
+                            
+                            if request_body.strip():
+                                try:
+                                    request_payload = json.loads(request_body)
+                                    
+                                    # 检查是否包含所有指定的键值对
+                                    for key, value in payload_pattern.items():
+                                        if key not in request_payload or request_payload[key] != value:
+                                            payload_matched = False
+                                            break
+                                except json.JSONDecodeError as e:
+                                    logger.warning(f"请求体解析JSON失败: {e}")
+                                    payload_matched = False
+                            else:
+                                payload_matched = False
+                        else:
+                            payload_matched = False
+                    except Exception as e:
+                        logger.warning(f"解析请求体时出错: {e}")
+                        payload_matched = False
+                
+                # 如果所有条件都匹配，返回响应体
+                if url_matched and method_matched and payload_matched:
+                    try:
+                        # 打印匹配信息
+                        logger.info(f"匹配到API请求: {request.url} ({request.method})")
+                        if request.body:
+                            body_text = request.body
+                            if isinstance(body_text, bytes):
+                                body_text = body_text.decode('utf-8')
+                            logger.info(f"请求体: {body_text}")
+                        
+                        # 解析响应体为JSON
+                        response_body = request.response.body
+                        if isinstance(response_body, bytes):
+                            response_body = response_body.decode('utf-8')
+                        
+                        try:
+                            response_data = json.loads(response_body)
+                            
+                            # 如果有回调函数，调用它
+                            if callback and callable(callback):
+                                callback(response_data)
+                            
+                            return response_data
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"响应体解析JSON失败: {e}")
+                            logger.info(f"原始响应内容: {response_body[:200]}...")
+                            continue
+                    except Exception as e:
+                        logger.warning(f"处理响应时出错: {str(e)}")
+                        continue
             
+            # 等待一小段时间再检查
             time.sleep(0.5)
         
-        # 超时时打印所有捕获的响应URLs，以便调试
-        print(f"API监控超时({timeout}秒)，未找到匹配的响应。已捕获的URLs:")
-        responses = driver.execute_script("return window._apiMonitor.responses;")
-        for url in responses.keys():
-            print(f" - {url}")
+        # 超时，打印所有捕获的请求供调试
+        logger.warning(f"API监控超时({timeout}秒)，未找到匹配的响应。已捕获的请求:")
+        for i, request in enumerate(driver.requests):
+            if not request.response:
+                continue
+                
+            logger.info(f"{i+1}. {request.method} {request.url}")
+            if request.body:
+                body_text = request.body
+                if isinstance(body_text, bytes):
+                    try:
+                        body_text = body_text.decode('utf-8')
+                    except:
+                        body_text = "<二进制数据>"
+                logger.info(f"   请求体: {body_text[:200]}{'...' if len(str(body_text)) > 200 else ''}")
         
         return None
     except Exception as e:
-        print(f"监控API响应出错: {e}")
+        logger.error(f"监控API响应出错: {str(e)}")
         return None
 
 

@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # 美团POS配置
     MEITUAN_CONFIG: Dict[str, str] = {
         "LOGIN_URL": "https://pos.meituan.com/web/rms-account#/login",
-        "BUSINESS_OVERVIEW_URL": "https://pos.meituan.com/web/rms-report/#/business-overview",
+        "BUSINESS_OVERVIEW_URL": "https://pos.meituan.com/web/report/business-report#/rms-report/business-report",
         "PHONE_NUMBER": os.getenv("MEITUAN_PHONE", ""),
         "TARGET_ORG": os.getenv("MEITUAN_ORG", ""),
     }

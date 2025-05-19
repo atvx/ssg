@@ -54,12 +54,24 @@ def init_chrome_driver(config, force_new_session=False):
     try:
         monitor_api = config.get("MONITOR_API_RESPONSE", False)
         if monitor_api:
+            # 优化selenium-wire配置
             seleniumwire_options = {
-                'disable_encoding': True,
-                'suppress_connection_errors': True
+                'disable_encoding': True,  # 禁用内容编码，以便能够读取响应体
+                'suppress_connection_errors': True,  # 抑制连接错误
+                'verify_ssl': False,  # 不验证SSL证书，避免某些HTTPS请求问题
+                'request_storage': 'memory',  # 使用内存存储请求，提高性能
+                'request_storage_max_size': 100  # 最多存储100个请求，避免内存问题
             }
+            
+            # 设置请求过滤范围
+            scopes = config.get("MONITOR_SCOPES", ['.*pos\.meituan\.com.*'])
+            
+            # 创建driver
             driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)
-            driver.scopes = config.get("MONITOR_SCOPES", [])
+            
+            # 设置请求过滤
+            driver.scopes = scopes
+            print(f"已启用API监控，监控范围: {scopes}")
         else:
             driver = webdriver.Chrome(options=chrome_options)
             
@@ -103,12 +115,23 @@ def init_chrome_driver(config, force_new_session=False):
                 
                 monitor_api = config.get("MONITOR_API_RESPONSE", False)
                 if monitor_api:
+                    # 优化selenium-wire配置
                     seleniumwire_options = {
                         'disable_encoding': True,
-                        'suppress_connection_errors': True
+                        'suppress_connection_errors': True,
+                        'verify_ssl': False,
+                        'request_storage': 'memory',
+                        'request_storage_max_size': 100
                     }
+                    
+                    # 设置请求过滤范围
+                    scopes = config.get("MONITOR_SCOPES", ['.*pos\.meituan\.com.*'])
+                    
+                    # 创建driver
                     driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)
-                    driver.scopes = config.get("MONITOR_SCOPES", [])
+                    
+                    # 设置请求过滤
+                    driver.scopes = scopes
                 else:
                     driver = webdriver.Chrome(options=chrome_options)
                 
