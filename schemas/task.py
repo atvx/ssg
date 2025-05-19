@@ -35,7 +35,7 @@ class Task(TaskBase):
     completed_at: Optional[datetime] = Field(None, description="完成时间")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class TaskStatus(BaseModel):
@@ -47,4 +47,4 @@ class TaskStatus(BaseModel):
     result: Optional[str] = Field(None, description="任务结果")
 
     class Config:
-        orm_mode = True
+        from_attributes = True

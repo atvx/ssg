@@ -27,7 +27,7 @@ class SalesRecord(BaseModel):
     order_count: int
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class SalesQuery(BaseModel):
