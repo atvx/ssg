@@ -1,8 +1,10 @@
+import logging
 import json
 from datetime import datetime, date
 from celery.utils.log import get_task_logger
 from sqlalchemy.orm import Session
 
+from celery import shared_task
 from celery_app.celery import celery_app
 from db.database import SessionLocal, get_db
 from db.crud import update_task, create_or_update_sales_record
@@ -11,7 +13,8 @@ from schemas.task import TaskUpdate
 from services.meituan_service import fetch_meituan_data
 from services.duowei_service import fetch_duowei_data
 
-logger = get_task_logger(__name__)
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 # 辅助函数，用于更新任务状态
@@ -38,6 +41,9 @@ def update_task_status(task_id: int, status: str, progress: int, result=None, er
 
 # 保存销售记录到数据库
 def save_sales_records(records, platform, date_str):
+    # 确保在函数内部可以访问date
+    from datetime import date
+    
     db = SessionLocal()
     try:
         for record in records:
@@ -57,6 +63,9 @@ def save_sales_records(records, platform, date_str):
 @celery_app.task(bind=True)
 def fetch_meituan_task(self, task_id: int, date: str = None):
     """获取美团数据的后台任务"""
+    # 确保在函数内部可以访问datetime
+    from datetime import datetime
+    
     try:
         update_task_status(task_id, "running", 10)
         
@@ -91,6 +100,9 @@ def fetch_meituan_task(self, task_id: int, date: str = None):
 @celery_app.task(bind=True)
 def fetch_duowei_task(self, task_id: int, date: str = None):
     """获取多维数据的后台任务"""
+    # 确保在函数内部可以访问datetime
+    from datetime import datetime
+    
     try:
         update_task_status(task_id, "running", 10)
         
@@ -122,6 +134,9 @@ def fetch_duowei_task(self, task_id: int, date: str = None):
 @celery_app.task(bind=True)
 def fetch_all_data_task(self, task_id: int, date: str = None):
     """获取所有平台数据的后台任务"""
+    # 确保在函数内部可以访问datetime
+    from datetime import datetime
+    
     try:
         update_task_status(task_id, "running", 10)
         

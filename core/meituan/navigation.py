@@ -1,4 +1,5 @@
 import time
+import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -80,189 +81,138 @@ def navigate_to_business_overview(driver, wait, config):
 
 def select_date(driver, date_str):
     """
-    在日期范围选择器中设置日期
+    在日期范围选择器中设置开始和结束日期为同一天
     
-    Args:
+    参数:
         driver: Selenium WebDriver实例
         date_str: 日期字符串，格式为'YYYY-MM-DD'
-    
-    Returns:
-        bool: 是否成功设置日期
+        
+    返回:
+        bool: 设置日期成功返回True，失败返回False
     """
     try:
-        # 日期格式转换为控件要求的格式，如：2025/05/11
-        date_formatted = date_str.replace('-', '/')
-
-        # 直接注入JS设置Ant Design日期范围控件的值
-        script = f"""
-        try {{
-            // 查找日期选择器输入框
-            const inputs = document.querySelectorAll('.ant-calendar-picker-input');
-            if (!inputs || inputs.length < 2) {{
-                console.error('未找到日期选择器输入框');
-                return false;
-            }}
-            
-            // 设置开始日期输入框
-            inputs[0].removeAttribute('readonly');
-            inputs[0].value = '{date_formatted}';
-            inputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
-            inputs[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
-
-            // 设置结束日期输入框（与开始日期相同）
-            inputs[1].removeAttribute('readonly');
-            inputs[1].value = '{date_formatted}';
-            inputs[1].dispatchEvent(new Event('input', {{ bubbles: true }}));
-            inputs[1].dispatchEvent(new Event('change', {{ bubbles: true }}));
-            
-            // 立即点击查询按钮
-            const queryBtns = document.querySelectorAll('button.ant-btn-primary');
-            let clicked = false;
-            
-            for (let i = 0; i < queryBtns.length; i++) {{
-                if (queryBtns[i].textContent.trim() === '查询') {{
-                    queryBtns[i].click();
-                    clicked = true;
-                    console.log('成功点击查询按钮');
-                    break;
-                }}
-            }}
-            
-            if (!clicked) {{
-                console.warn('未找到查询按钮');
-            }}
-            
-            return true;
-        }} catch (e) {{
-            console.error('设置日期时出错:', e);
-            return false;
-        }}
-        """
-        result = driver.execute_script(script)
+        # 将输入的日期字符串转换为日期对象
+        target_date = datetime.datetime.strptime(date_str, '%Y-%m-%d')
+        target_year = target_date.year
+        target_month = target_date.month
+        target_day = target_date.day
         
-        # 等待页面刷新
-        import time
-        time.sleep(3)
+        # 获取日期输入框
+        date_inputs = driver.find_elements(By.CSS_SELECTOR, "input.ant-calendar-picker-input")
+        if len(date_inputs) < 1:
+            raise Exception("找不到日期选择器")
         
-        # 如果JavaScript返回失败，尝试备用方法
-        if not result:
-            # 尝试使用set_ant_date_picker方法
-            try:
-                # 日期格式转换为控件要求的格式，如：2025/05/11
-                date_formatted = date_str.replace('-', '/')
-                
-                # 使用更简单的脚本
-                backup_script = f"""
-                const inputs = document.querySelectorAll('.ant-calendar-picker-input');
-                if (inputs.length >= 2) {{
-                    // 设置开始日期
-                    inputs[0].value = '{date_formatted}';
-                    // 设置结束日期
-                    inputs[1].value = '{date_formatted}';
-                    
-                    // 触发事件
-                    const event = new Event('change', {{ bubbles: true }});
-                    inputs[0].dispatchEvent(event);
-                    inputs[1].dispatchEvent(event);
-                    
-                    // 查找并点击查询按钮
-                    const buttons = document.querySelectorAll('button');
-                    for (let btn of buttons) {{
-                        if (btn.textContent.includes('查询')) {{
-                            btn.click();
-                            return true;
-                        }}
-                    }}
-                }}
-                return false;
-                """
-                
-                result = driver.execute_script(backup_script)
-                time.sleep(2)
-            except Exception as e:
-                print(f"备用日期设置方法失败: {e}")
-                result = False
+        # 1. 设置开始日期
+        date_inputs[0].click()
+        time.sleep(0.5)
         
-        print(f"日期设置为: {date_str}, 结果: {'成功' if result else '失败'}")
-        return True  # 即使JavaScript返回失败，也返回成功，因为我们无法确定是否真的失败
-    except Exception as e:
-        print(f"设置日期时出错: {e}")
-        return False
-
-
-def select_date_range(driver, wait, start_date, end_date):
-    """设置日期范围
-    
-    Args:
-        driver: WebDriver实例
-        wait: WebDriverWait实例
-        start_date: 开始日期，格式为YYYY-MM-DD
-        end_date: 结束日期，格式为YYYY-MM-DD
+        # 处理开始日期选择
+        calendar = driver.find_element(By.CSS_SELECTOR, "div.ant-calendar-panel")
         
-    Returns:
-        bool: 是否成功设置日期范围
-    """
-    try:
-        # 格式化日期，确保符合YYYY-MM-DD格式
-        from datetime import datetime
+        # 获取当前显示的年份和月份
+        year_select = calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-year-select")
+        month_select = calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-month-select")
+        
+        # 安全地获取年份和月份文本
+        year_text = year_select.text.replace('年', '')
+        month_text = month_select.text.replace('月', '')
+        
+        # 检查并转换年份和月份
         try:
-            # 尝试解析日期字符串
-            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
-            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
-            
-            # 转换为UI需要的格式
-            start_date_ui = start_date_obj.strftime("%Y/%m/%d")
-            end_date_ui = end_date_obj.strftime("%Y/%m/%d")
+            current_year = int(year_text) if year_text.strip() else datetime.datetime.now().year
+            current_month = int(month_text) if month_text.strip() else datetime.datetime.now().month
         except ValueError:
-            print(f"无效的日期格式，需要YYYY-MM-DD。收到: start_date={start_date}, end_date={end_date}")
+            print(f"无法解析年份或月份：年份='{year_text}'，月份='{month_text}'")
+            current_year = datetime.datetime.now().year
+            current_month = datetime.datetime.now().month
+        
+        # 切换到目标年份
+        while current_year != target_year:
+            if current_year < target_year:
+                calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-next-year-btn").click()
+                current_year += 1
+            else:
+                calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-prev-year-btn").click()
+                current_year -= 1
+            time.sleep(0.2)
+        
+        # 切换到目标月份
+        while current_month != target_month:
+            if current_month < target_month:
+                calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-next-month-btn").click()
+                current_month = current_month + 1 if current_month < 12 else 1
+            else:
+                calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-prev-month-btn").click()
+                current_month = current_month - 1 if current_month > 1 else 12
+            time.sleep(0.2)
+        
+        # 找到并点击目标日期单元格
+        day_cells = calendar.find_elements(By.CSS_SELECTOR, "td.ant-calendar-cell")
+        for cell in day_cells:
+            day_text = cell.text
+            if day_text.isdigit() and int(day_text) == target_day:
+                cell.click()
+                break
+        time.sleep(0.5)
+        
+        # 2. 设置结束日期（同样的日期）
+        try:
+            calendar = WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.ant-calendar-panel"))
+            )
+            
+            # 重复相同的步骤设置结束日期
+            year_select = calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-year-select")
+            month_select = calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-month-select")
+            
+            # 安全地获取年份和月份文本
+            year_text = year_select.text.replace('年', '')
+            month_text = month_select.text.replace('月', '')
+            
+            # 检查并转换年份和月份
+            try:
+                current_year = int(year_text) if year_text.strip() else datetime.datetime.now().year
+                current_month = int(month_text) if month_text.strip() else datetime.datetime.now().month
+            except ValueError:
+                print(f"无法解析年份或月份：年份='{year_text}'，月份='{month_text}'")
+                current_year = datetime.datetime.now().year
+                current_month = datetime.datetime.now().month
+            
+            # 切换到目标年份
+            while current_year != target_year:
+                if current_year < target_year:
+                    calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-next-year-btn").click()
+                    current_year += 1
+                else:
+                    calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-prev-year-btn").click()
+                    current_year -= 1
+                time.sleep(0.2)
+            
+            # 切换到目标月份
+            while current_month != target_month:
+                if current_month < target_month:
+                    calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-next-month-btn").click()
+                    current_month = current_month + 1 if current_month < 12 else 1
+                else:
+                    calendar.find_element(By.CSS_SELECTOR, "a.ant-calendar-prev-month-btn").click()
+                    current_month = current_month - 1 if current_month > 1 else 12
+                time.sleep(0.2)
+            
+            # 找到并点击目标日期单元格
+            day_cells = calendar.find_elements(By.CSS_SELECTOR, "td.ant-calendar-cell")
+            for cell in day_cells:
+                day_text = cell.text
+                if day_text.isdigit() and int(day_text) == target_day:
+                    cell.click()
+                    break
+            return True
+        except Exception as e:
+            print(f"设置结束日期时出错: {e}")
+            # 尝试使用更简单的方式关闭日期选择器
+            driver.execute_script("""
+            document.body.click();
+            """)
             return False
-        
-        # 使用直接的JavaScript方法设置日期选择器的值
-        script = f"""
-        function setDateRange(startDate, endDate) {{
-            // 找到日期范围选择器
-            const inputs = document.querySelectorAll('.ant-calendar-picker-input');
-            if (!inputs || inputs.length < 2) {{
-                console.error('未找到日期选择器输入框');
-                return false;
-            }}
-            
-            // 设置开始日期
-            const startInput = inputs[0];
-            startInput.value = '{start_date_ui}';
-            startInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            startInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            
-            // 设置结束日期
-            const endInput = inputs[1];
-            endInput.value = '{end_date_ui}';
-            endInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            endInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            
-            // 尝试自动点击查询按钮
-            setTimeout(() => {{
-                const queryBtn = [...document.querySelectorAll('button.ant-btn-primary')].find(btn => 
-                    btn.textContent.trim() === '查询');
-                if (queryBtn) {{
-                    queryBtn.click();
-                    console.log('自动点击了查询按钮');
-                }}
-            }}, 500);
-            
-            return true;
-        }}
-        
-        return setDateRange('{start_date_ui}', '{end_date_ui}');
-        """
-        
-        result = driver.execute_script(script)
-        
-        # 等待一下，确保日期选择生效
-        import time
-        time.sleep(2)
-        
-        print(f"日期范围设置: {start_date_ui} 至 {end_date_ui}, 结果: {'成功' if result else '失败'}")
-        return result
     except Exception as e:
-        print(f"设置日期范围时出错: {e}")
-        return False 
+        print(f"设置日期范围失败: {e}")
+        return False

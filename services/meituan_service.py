@@ -1,7 +1,6 @@
 import json
 import logging
 from typing import List, Optional, Dict, Any
-import datetime
 from fastapi import HTTPException, status
 from selenium.webdriver.support.ui import WebDriverWait
 import time
@@ -10,6 +9,7 @@ from selenium.webdriver.common.by import By
 from datetime import datetime, timedelta
 import traceback
 from urllib.parse import urlencode, quote
+import re
 
 from core.meituan.auth import login_with_phone, login_with_account, select_organization, check_login, choose_organization
 from core.meituan.browser import init_chrome_driver
@@ -80,9 +80,29 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
         "data": []
     }
     
+    # 增加详细日志，追踪日期参数
+    logger.info(f"======= fetch_meituan_data 被调用，接收到日期参数：'{date}' =======")
+    
     # 处理日期参数
     today = datetime.now().date().isoformat()
-    query_date = date if date else today
+    
+    # 验证传入的日期格式，确保是YYYY-MM-DD
+    if date:
+        try:
+            # 验证日期格式
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            query_date = date_obj.strftime("%Y-%m-%d")  # 标准化日期格式
+            logger.info(f"使用传入的日期参数: {date} -> {query_date}")
+        except ValueError:
+            logger.warning(f"传入的日期格式错误: {date}，将使用当前日期")
+            query_date = today
+    else:
+        query_date = today
+        logger.info(f"未传入日期参数，使用当前日期: {query_date}")
+    
+    # 确保日期字符串格式为YYYY-MM-DD
+    if query_date != date and date is not None:
+        logger.warning(f"⚠️ 注意：传入的日期参数 '{date}' 已被转换为 '{query_date}'")
     
     # 将日期信息添加到结果中
     task_result["date"] = query_date
@@ -136,7 +156,6 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
         # 进入数据中心
         logger.info("正在进入报表中心...")
         try:
-            # 改进导航逻辑
             # 1. 先导航到报表中心
             navigate_success = navigate_to_report_center(driver, wait)
             if not navigate_success:
@@ -145,7 +164,7 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
             # 2. 然后导航到业务概览页面
             logger.info(f"导航到业务概览页面: {settings.MEITUAN_CONFIG['BUSINESS_OVERVIEW_URL']}")
             driver.get(settings.MEITUAN_CONFIG["BUSINESS_OVERVIEW_URL"])
-            time.sleep(5)  # 增加等待时间确保页面加载完成
+            time.sleep(2)
             
             # 3. 检查URL确认是否成功导航
             logger.info(f"当前URL: {driver.current_url}")
@@ -153,16 +172,6 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
                 logger.info("成功导航到业务概览页面")
                 # 隐藏弹窗
                 hide_all_popups(driver)
-                
-                # 设置日期
-                logger.info(f"设置查询日期: {query_date}")
-                try:
-                    date_set = select_date(driver, query_date)
-                    if not date_set:
-                        logger.warning("日期设置可能失败，将使用默认日期")
-                except Exception as e:
-                    logger.error(f"设置日期时出错: {e}")
-                    logger.warning("将使用默认日期进行查询")
             else:
                 logger.error("导航到业务概览页面失败")
                 task_result["message"] = "无法导航到业务概览页面"
@@ -171,21 +180,9 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
             logger.error(f"导航到业务概览页面时出错: {e}")
             task_result["message"] = f"导航失败: {str(e)}"
             return task_result
-            
-        # 等待页面加载完成
-        time.sleep(5)  # 增加等待时间
         
         # 从API获取仓库列表
         logger.info("获取仓库列表...")
-        
-        # 清除之前的请求记录
-        if hasattr(driver, 'requests'):
-            driver.requests.clear()
-        
-        # 在页面上触发API请求
-        logger.info("正在导航到报表中心，触发API请求...")
-        driver.get(settings.MEITUAN_CONFIG["BUSINESS_OVERVIEW_URL"])
-        time.sleep(5)  # 等待页面加载和API请求发送
         
         # 使用selenium-wire监控API响应
         warehouse_response = monitor_api_response(
@@ -194,24 +191,7 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
             timeout=120,  # 超时时间
             methods=['POST']
         )
-        
-        if not warehouse_response:
-            logger.warning("未通过tree/paged/query路径获取到仓库列表，尝试备用URL模式")
-            # 尝试备用API模式
-            warehouse_response = monitor_api_response(
-                driver,
-                "warehouse",  # 尝试包含warehouse的URL
-                timeout=120,
-                methods=['POST', 'GET']
-            )
-            
-        if not warehouse_response:
-            logger.error("获取仓库列表失败")
-            task_result["message"] = "获取仓库列表失败，无法获取报表数据"
-            return task_result
-            
-        logger.info(f"获取到仓库列表响应")
-        
+
         # 处理仓库数据
         warehouses = extract_warehouses(warehouse_response)
         if not warehouses:
@@ -219,7 +199,7 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
             task_result["message"] = "API响应中未找到仓库数据"
             return task_result
             
-        logger.info(f"成功提取 {len(warehouses)} 个仓库")
+        logger.info(f"成功获取 {len(warehouses)} 个仓库")
         
         # 查询每个仓库的销售数据
         logger.info("开始查询各仓库销售数据...")
@@ -228,65 +208,71 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
         # 对每个仓库执行高级查询
         try:
             from tqdm import tqdm
-            # 创建config字典供perform_advanced_search使用
             api_config = {
-                "API_TIMEOUT": 60,  # API超时时间 
+                "API_TIMEOUT": 60,
                 "BUSINESS_SUMMARY_URL": "https://pos.meituan.com/web/api/v2/reports/combine/business-summary-page",
                 "OUTPUT_FILE": "sales_meituan.json"
             }
             
-            # 修改core/meituan/data.py中perform_advanced_search函数的实现
             def patched_monitor_api_response(driver, url, max_wait_time=None, methods=None, start_time=None, **kwargs):
-                """包装monitor_api_response函数，适配参数不匹配的问题"""
-                # 将max_wait_time转换为timeout参数
                 timeout = max_wait_time if max_wait_time is not None else 60
                 return monitor_api_response(driver, url, timeout=timeout, methods=methods, start_time=start_time, **kwargs)
             
-            # 临时替换monitor_api_response函数
             import core.meituan.data
             original_monitor_api_response = core.meituan.data.monitor_api_response
             core.meituan.data.monitor_api_response = patched_monitor_api_response
             
+            time.sleep(3)
+            
+            # 在遍历仓库前，设置一次查询日期
+            logger.info(f"设置查询日期: {query_date}")
+            try:
+                # 确保日期格式正确 (YYYY-MM-DD)
+                try:
+                    date_obj = datetime.strptime(query_date, "%Y-%m-%d")
+                    formatted_date = date_obj.strftime("%Y-%m-%d")  # 标准化日期格式
+                    logger.info(f"格式化后的日期: {formatted_date}")
+                except ValueError:
+                    logger.error(f"日期格式错误: {query_date}，应为YYYY-MM-DD格式")
+                    task_result["message"] = "日期格式错误，应为YYYY-MM-DD格式"
+                    return task_result
+                
+                logger.info(f"调用select_date设置日期: {formatted_date}")
+                select_date(driver, formatted_date)
+                time.sleep(2)
+                verify_dates = driver.execute_script(current_date_script)
+                if verify_dates:
+                    logger.info(f"最终UI显示日期 - 开始: {verify_dates['start']}, 结束: {verify_dates['end']}")
+                    formatted_ui_date = formatted_date.replace('-', '/')
+                    if verify_dates['start'] == formatted_ui_date and verify_dates['end'] == formatted_ui_date:
+                        logger.info(f"日期设置最终验证成功: {formatted_ui_date}")
+                    else:
+                        logger.warning(f"日期设置最终验证不匹配，期望: {formatted_ui_date}, 实际: {verify_dates['start']}/{verify_dates['end']}")
+                
+            except Exception as e:
+                logger.error(f"设置日期时出错: {e}")
+                logger.error(traceback.format_exc())
+                logger.warning("将使用默认日期进行查询")
+            
+            # 确保只设置一次日期后，开始遍历仓库执行查询
+            logger.info(f"开始遍历查询 {len(warehouses)} 个仓库的销售数据，每个仓库只会执行一次查询操作")
             for name in tqdm(warehouses, desc="处理进度", unit="仓", ncols=100, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"):
                 logger.info(f"正在查询仓库【{name}】的销售数据")
                 
-                # 强制清除所有请求记录，确保每次查询都是全新的
-                if hasattr(driver, 'requests'):
-                    driver.requests.clear()
-                
-                # 重新加载页面，确保每次查询都是全新的状态
-                driver.get(settings.MEITUAN_CONFIG["BUSINESS_OVERVIEW_URL"])
-                time.sleep(3)  # 等待页面完全加载
-                
-                # 执行高级查询
+                # 执行高级查询，确保每个仓库只查询一次
                 result = perform_advanced_search(driver, wait, target_org=name, config=api_config)
-                
-                # 验证结果是否有效
-                if result["incomeAmt"] == 0 and result["salesCartCount"] == 0:
-                    # 如果数据为0，尝试再查询一次
-                    logger.warning(f"仓库【{name}】查询结果为空，尝试再次查询...")
-                    time.sleep(2)
-                    
-                    # 重新清除请求记录
-                    if hasattr(driver, 'requests'):
-                        driver.requests.clear()
-                    
-                    # 再次执行查询
-                    result = perform_advanced_search(driver, wait, target_org=name, config=api_config)
-                
                 sales_results.append(result)
                 logger.info(f"仓库【{name}】销售数据: 收入={result['incomeAmt']}元, 销售车辆={result['salesCartCount']}, 平均收入={result['avgIncomeAmt']}元")
                 
-                # 添加延迟，确保下一次查询不会受到影响
+                # 添加短暂延迟，确保下一次查询不会受到影响
                 time.sleep(1)
-                
+            
             # 恢复原始函数
             core.meituan.data.monitor_api_response = original_monitor_api_response
             
         except Exception as e:
             logger.error(f"查询销售数据时出错: {e}")
             logger.error(traceback.format_exc())
-            # 即使查询过程中出错，也返回已获取的数据
             if not sales_results:
                 task_result["message"] = f"查询销售数据时出错: {str(e)}"
                 return task_result
@@ -462,7 +448,6 @@ def extract_warehouses(response_data):
             return []
             
         # 筛选含"仓"且不带括号的机构
-        import re
         pattern = re.compile(r'^[^()（）]*仓[^()（）]*$')
         warehouses = [
             item.get("orgName", "")
