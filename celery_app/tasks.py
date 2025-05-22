@@ -4,7 +4,7 @@ from celery.utils.log import get_task_logger
 from sqlalchemy.orm import Session
 
 from celery_app.celery import celery_app
-from db.database import SessionLocal
+from db.database import SessionLocal, get_db
 from db.crud import update_task, create_or_update_sales_record
 from schemas.sales import SalesRecordCreate
 from schemas.task import TaskUpdate
@@ -55,25 +55,28 @@ def save_sales_records(records, platform, date_str):
 
 
 @celery_app.task(bind=True)
-def fetch_meituan_task(self, task_id: int, start_date: str = None, end_date: str = None):
+def fetch_meituan_task(self, task_id: int, date: str = None):
     """获取美团数据的后台任务"""
     try:
         update_task_status(task_id, "running", 10)
         
-        # 使用日期范围获取数据
-        date_params = {
-            "start_date": start_date,
-            "end_date": end_date
-        }
+        # 使用Meituan服务获取数据
+        from services.meituan_service import fetch_meituan_data
+        db = next(get_db())
         
-        # 获取数据
-        data = fetch_meituan_data(date_params)
+        # 获取美团数据
+        data = fetch_meituan_data(db, date)
         update_task_status(task_id, "running", 50)
         
+        # 检查是否获取成功
+        if not data["success"]:
+            update_task_status(task_id, "failed", 0, error=data["message"])
+            return {"status": "error", "error": data["message"]}
+        
         # 保存数据到数据库
-        # 使用start_date作为默认日期，如果未提供则使用当前日期
-        reference_date = start_date or datetime.now().strftime("%Y-%m-%d")
-        save_sales_records(data, "meituan", reference_date)
+        # 使用date作为默认日期，如果未提供则使用当前日期
+        reference_date = date or datetime.now().strftime("%Y-%m-%d")
+        save_sales_records(data["data"], "meituan", reference_date)
         
         # 更新任务状态
         update_task_status(task_id, "completed", 100, result=data)
@@ -86,19 +89,14 @@ def fetch_meituan_task(self, task_id: int, start_date: str = None, end_date: str
 
 
 @celery_app.task(bind=True)
-def fetch_duowei_task(self, task_id: int, start_date: str = None, end_date: str = None):
+def fetch_duowei_task(self, task_id: int, date: str = None):
     """获取多维数据的后台任务"""
     try:
         update_task_status(task_id, "running", 10)
         
-        # 使用日期范围获取数据
-        date_params = {
-            "start_date": start_date,
-            "end_date": end_date
-        }
-        
         # 获取数据
-        result = fetch_duowei_data(date_params)
+        from services.duowei_service import fetch_duowei_data
+        result = fetch_duowei_data(date)
         update_task_status(task_id, "running", 50)
         
         # 检查是否获取成功
@@ -107,8 +105,8 @@ def fetch_duowei_task(self, task_id: int, start_date: str = None, end_date: str 
             return {"status": "error", "error": result["message"]}
         
         # 保存数据到数据库
-        # 使用start_date作为默认日期，如果未提供则使用当前日期
-        reference_date = start_date or datetime.now().strftime("%Y-%m-%d")
+        # 使用date作为默认日期，如果未提供则使用当前日期
+        reference_date = date or datetime.now().strftime("%Y-%m-%d")
         save_sales_records(result["data"], "duowei", reference_date)
         
         # 更新任务状态
@@ -122,23 +120,20 @@ def fetch_duowei_task(self, task_id: int, start_date: str = None, end_date: str 
 
 
 @celery_app.task(bind=True)
-def fetch_all_data_task(self, task_id: int, start_date: str = None, end_date: str = None):
+def fetch_all_data_task(self, task_id: int, date: str = None):
     """获取所有平台数据的后台任务"""
     try:
         update_task_status(task_id, "running", 10)
         
-        # 准备日期参数
-        date_params = {
-            "start_date": start_date,
-            "end_date": end_date
-        }
-        
         # 获取美团数据
-        meituan_result = fetch_meituan_data(date_params)
+        from services.meituan_service import fetch_meituan_data
+        db = next(get_db())
+        meituan_result = fetch_meituan_data(db, date)
         update_task_status(task_id, "running", 40)
         
         # 获取多维数据
-        duowei_result = fetch_duowei_data(date_params)
+        from services.duowei_service import fetch_duowei_data
+        duowei_result = fetch_duowei_data(date)
         update_task_status(task_id, "running", 70)
         
         # 获取数据列表
@@ -153,11 +148,11 @@ def fetch_all_data_task(self, task_id: int, start_date: str = None, end_date: st
             logger.warning(f"多维数据获取失败: {duowei_result.get('message', '未知错误')}")
         
         # 合并数据
+        query_date = date or datetime.now().strftime("%Y-%m-%d")
         all_data = {
             "success": meituan_result.get("success", False) or duowei_result.get("success", False),
             "message": "数据获取部分成功" if (meituan_result.get("success", False) or duowei_result.get("success", False)) else "所有数据源获取失败",
-            "start_date": start_date or datetime.now().strftime("%Y-%m-%d"),
-            "end_date": end_date or datetime.now().strftime("%Y-%m-%d"),
+            "date": query_date,
             "data": {
                 "meituan": {
                     "success": meituan_result.get("success", False),
@@ -173,8 +168,8 @@ def fetch_all_data_task(self, task_id: int, start_date: str = None, end_date: st
         }
         
         # 保存数据到数据库
-        # 使用start_date作为默认日期，如果未提供则使用当前日期
-        reference_date = start_date or datetime.now().strftime("%Y-%m-%d")
+        # 使用date作为默认日期，如果未提供则使用当前日期
+        reference_date = date or datetime.now().strftime("%Y-%m-%d")
         if meituan_items:
             save_sales_records(meituan_items, "meituan", reference_date)
         if duowei_items:

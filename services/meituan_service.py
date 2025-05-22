@@ -13,7 +13,7 @@ from urllib.parse import urlencode, quote
 
 from core.meituan.auth import login_with_phone, login_with_account, select_organization, check_login, choose_organization
 from core.meituan.browser import init_chrome_driver
-from core.meituan.navigation import navigate_to_business_overview, navigate_to_report_center, select_date_range
+from core.meituan.navigation import navigate_to_business_overview, navigate_to_report_center, select_date
 from core.meituan.data import get_all_meituan_data, perform_advanced_search
 from utils.browser_utils import hide_all_popups, handle_iframe_slider, monitor_api_response
 
@@ -47,20 +47,19 @@ def fetch_meituan_data_task(self):
         self.retry(exc=e, countdown=retry_countdown)
 
 
-def fetch_meituan_data(db: Session, date_params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any]:
     """获取美团销售数据
     
     Args:
         db: 数据库会话
-        date_params: 日期参数字典，包含start_date和end_date（格式为YYYY-MM-DD）
+        date: 查询日期（格式为YYYY-MM-DD），为空时默认为当天
         
     Returns:
         Dict[str, Any]: 提取的数据，格式为：
         {
             "success": true,
             "message": "获取数据成功",
-            "start_date": "2025-05-19",
-            "end_date": "2025-05-19",
+            "date": "2025-05-19",
             "platform": "meituan",
             "data": [
                 {
@@ -83,33 +82,12 @@ def fetch_meituan_data(db: Session, date_params: Optional[Dict[str, str]] = None
     
     # 处理日期参数
     today = datetime.now().date().isoformat()
-    start_date = today
-    end_date = today
-    
-    if date_params:
-        # 应用日期处理规则
-        param_start = date_params.get("start_date")
-        param_end = date_params.get("end_date")
-        
-        if param_start and not param_end:
-            # start_date有值，end_date为空：使用今天作为end_date
-            start_date = param_start
-            # end_date保持为today
-        elif param_end and not param_start:
-            # end_date有值，start_date为空：使start_date与end_date一致
-            start_date = param_end
-            end_date = param_end
-        elif param_start and param_end:
-            # 两者都有值：直接使用传入的值
-            start_date = param_start
-            end_date = param_end
-        # 两者都为空的情况已经由默认值处理
+    query_date = date if date else today
     
     # 将日期信息添加到结果中
-    task_result["start_date"] = start_date
-    task_result["end_date"] = end_date
+    task_result["date"] = query_date
     
-    logger.info(f"获取美团数据，日期范围: {start_date} 至 {end_date}")
+    logger.info(f"获取美团数据，查询日期: {query_date}")
     
     try:
         # 初始化浏览器，开启API监控
@@ -176,14 +154,14 @@ def fetch_meituan_data(db: Session, date_params: Optional[Dict[str, str]] = None
                 # 隐藏弹窗
                 hide_all_popups(driver)
                 
-                # 设置日期范围
-                logger.info(f"设置查询日期范围: {start_date} 至 {end_date}")
+                # 设置日期
+                logger.info(f"设置查询日期: {query_date}")
                 try:
-                    date_set = select_date_range(driver, wait, start_date, end_date)
+                    date_set = select_date(driver, query_date)
                     if not date_set:
-                        logger.warning("日期范围设置可能失败，将使用默认日期")
+                        logger.warning("日期设置可能失败，将使用默认日期")
                 except Exception as e:
-                    logger.error(f"设置日期范围时出错: {e}")
+                    logger.error(f"设置日期时出错: {e}")
                     logger.warning("将使用默认日期进行查询")
             else:
                 logger.error("导航到业务概览页面失败")
@@ -402,18 +380,19 @@ def select_organization(browser, wait, target_org):
         return False
 
 
-def get_all_meituan_data(db: Session) -> Dict[str, Any]:
+def get_all_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any]:
     """获取所有美团数据并处理
     
     Args:
         db: 数据库会话
+        date: 查询日期（格式为YYYY-MM-DD），为空时默认为当天
         
     Returns:
         Dict[str, Any]: 结果信息
     """
     try:
         # 获取基础销售数据
-        sales_data = fetch_meituan_data(db)
+        sales_data = fetch_meituan_data(db, date)
         
         # 验证是否需要手机验证码
         if not sales_data["success"]:
@@ -450,8 +429,7 @@ def get_all_meituan_data(db: Session) -> Dict[str, Any]:
             "success": sales_data["success"],
             "message": sales_data["message"],
             "platform": "meituan",
-            "start_date": sales_data.get("start_date", ""),
-            "end_date": sales_data.get("end_date", ""),
+            "date": sales_data.get("date", ""),
             "data": sales_results,
             "summary": summary
         }

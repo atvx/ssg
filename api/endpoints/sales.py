@@ -145,73 +145,33 @@ def fetch_data(
     """
     触发获取销售数据的后台任务
     
-    - start_date: 开始日期（格式 YYYY-MM-DD），为空时根据逻辑处理
-    - end_date: 结束日期（格式 YYYY-MM-DD），为空时根据逻辑处理
+    - date: 查询日期（格式 YYYY-MM-DD），为空时默认为当前日期
     - platform: 可选，指定获取数据的平台，不指定则获取所有平台数据
-    
-    日期处理规则：
-    - start_date有值、end_date为空：自动补充end_date为当日日期
-    - end_date有值、start_date为空：start_date与end_date的日期保持一致
-    - 两者都为空：两者都是默认当天日期
     """
     # 处理日期参数
     today = datetime.now().date()
     
-    # 解析start_date，如果提供
-    start_date = None
-    if request.start_date:
+    # 解析date，如果提供
+    query_date = None
+    if request.date:
         try:
-            start_date = datetime.strptime(request.start_date, "%Y-%m-%d").date()
+            query_date = datetime.strptime(request.date, "%Y-%m-%d").date()
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
-                    "msg": "无效的开始日期格式，应为YYYY-MM-DD",
-                    "field": "start_date"
+                    "msg": "无效的日期格式，应为YYYY-MM-DD",
+                    "field": "date"
                 }
             )
+    else:
+        # 未提供日期参数，使用当前日期
+        query_date = today
     
-    # 解析end_date，如果提供
-    end_date = None
-    if request.end_date:
-        try:
-            end_date = datetime.strptime(request.end_date, "%Y-%m-%d").date()
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "msg": "无效的结束日期格式，应为YYYY-MM-DD",
-                    "field": "end_date"
-                }
-            )
+    # 转换为字符串格式
+    date_str = query_date.isoformat()
     
-    # 应用日期处理规则
-    if start_date and not end_date:
-        # start_date有值，end_date为空：使用今天作为end_date
-        end_date = today
-    elif end_date and not start_date:
-        # end_date有值，start_date为空：使start_date与end_date一致
-        start_date = end_date
-    elif not start_date and not end_date:
-        # 两者都为空：使用今天的日期
-        start_date = today
-        end_date = today
-    
-    # 确保start_date不晚于end_date
-    if start_date > end_date:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "msg": "开始日期不能晚于结束日期",
-                "field": "start_date"
-            }
-        )
-    
-    # 获取日期范围字符串
-    start_date_str = start_date.isoformat()
-    end_date_str = end_date.isoformat()
-    
-    logger.info(f"获取数据，日期范围: {start_date_str} 至 {end_date_str}")
+    logger.info(f"获取数据，查询日期: {date_str}")
     
     # 平台验证
     platform = request.platform
@@ -233,15 +193,15 @@ def fetch_data(
         if not platform:
             # 获取所有平台数据
             task = create_task(db, TaskCreate(task_type="fetch_all"), current_user.id)
-            fetch_all_data_task.delay(task.id, start_date_str, end_date_str)
+            fetch_all_data_task.delay(task.id, date_str)
         elif platform == "meituan":
             # 只获取美团数据
             task = create_task(db, TaskCreate(task_type="fetch_meituan"), current_user.id)
-            fetch_meituan_task.delay(task.id, start_date_str, end_date_str)
+            fetch_meituan_task.delay(task.id, date_str)
         elif platform == "duowei":
             # 只获取多维数据
             task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
-            fetch_duowei_task.delay(task.id, start_date_str, end_date_str)
+            fetch_duowei_task.delay(task.id, date_str)
         
         return create_success_response(
             message="数据获取任务已创建",
@@ -341,10 +301,8 @@ def fetch_sales_data(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    # 计算日期范围
-    end_date = datetime.now().date()
-    start_date = end_date - timedelta(days=days)
-    date_str = start_date.isoformat()
+    # 计算日期，默认为当前日期
+    date_str = datetime.now().date().isoformat()
     
     # 平台验证
     valid_platforms = set(["meituan", "duowei"])
@@ -394,6 +352,7 @@ def fetch_sales_data(
 
 @router.get("/meituan", summary="手动获取美团销售数据")
 def get_meituan_data(
+    date: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> APIResponse:
@@ -402,6 +361,9 @@ def get_meituan_data(
     
     此接口会直接运行数据爬取而不是创建一个后台任务
     
+    Args:
+        date: 查询日期（格式为YYYY-MM-DD），为空时默认为当天
+        
     Returns:
         APIResponse: 数据获取结果，包含仓库销售数据和汇总信息
     """
@@ -409,7 +371,7 @@ def get_meituan_data(
         # 使用重构后的服务
         from services.meituan_service import get_all_meituan_data
         
-        result = get_all_meituan_data(db)
+        result = get_all_meituan_data(db, date)
         
         # 检查是否获取成功
         if not result["success"]:
@@ -425,8 +387,7 @@ def get_meituan_data(
             data={
                 "summary": result.get("summary", {}),
                 "data": result.get("data", []),
-                "start_date": result.get("start_date", ""),
-                "end_date": result.get("end_date", ""),
+                "date": result.get("date", ""),
                 "platform": result.get("platform", "meituan")
             }
         )

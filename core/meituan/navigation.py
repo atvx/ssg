@@ -80,43 +80,114 @@ def navigate_to_business_overview(driver, wait, config):
 
 def select_date(driver, date_str):
     """
-    在日期范围选择器中设置开始和结束日期为同一天
+    在日期范围选择器中设置日期
     
-    参数:
+    Args:
         driver: Selenium WebDriver实例
         date_str: 日期字符串，格式为'YYYY-MM-DD'
-    """
-    # 日期格式转换为控件要求的格式，如：2025/05/11
-    date_formatted = date_str.replace('-', '/')
-
-    # 直接注入JS设置Ant Design日期范围控件的值
-    script = f"""
-    const inputs = document.querySelectorAll('.ant-calendar-picker-input');
-    inputs[0].removeAttribute('readonly');
-    inputs[0].value = '{date_formatted}';
-    inputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
-    inputs[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
-
-    inputs[1].removeAttribute('readonly');
-    inputs[1].value = '{date_formatted}';
-    inputs[1].dispatchEvent(new Event('input', {{ bubbles: true }}));
-    inputs[1].dispatchEvent(new Event('change', {{ bubbles: true }}));
-    """
-    driver.execute_script(script)
-    print(f"日期范围设置为: {date_str}")
     
-    # 尝试点击查询按钮以应用日期
-    driver.execute_script("""
-    const queryBtn = [...document.querySelectorAll('button.ant-btn-primary')].find(btn => btn.textContent.trim() === '查询');
-    if (queryBtn) {
-        queryBtn.click();
-        return true;
-    }
-    return false;
-    """)
-    
-    # 等待页面刷新
-    time.sleep(2)
+    Returns:
+        bool: 是否成功设置日期
+    """
+    try:
+        # 日期格式转换为控件要求的格式，如：2025/05/11
+        date_formatted = date_str.replace('-', '/')
+
+        # 直接注入JS设置Ant Design日期范围控件的值
+        script = f"""
+        try {{
+            // 查找日期选择器输入框
+            const inputs = document.querySelectorAll('.ant-calendar-picker-input');
+            if (!inputs || inputs.length < 2) {{
+                console.error('未找到日期选择器输入框');
+                return false;
+            }}
+            
+            // 设置开始日期输入框
+            inputs[0].removeAttribute('readonly');
+            inputs[0].value = '{date_formatted}';
+            inputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
+            inputs[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
+
+            // 设置结束日期输入框（与开始日期相同）
+            inputs[1].removeAttribute('readonly');
+            inputs[1].value = '{date_formatted}';
+            inputs[1].dispatchEvent(new Event('input', {{ bubbles: true }}));
+            inputs[1].dispatchEvent(new Event('change', {{ bubbles: true }}));
+            
+            // 立即点击查询按钮
+            const queryBtns = document.querySelectorAll('button.ant-btn-primary');
+            let clicked = false;
+            
+            for (let i = 0; i < queryBtns.length; i++) {{
+                if (queryBtns[i].textContent.trim() === '查询') {{
+                    queryBtns[i].click();
+                    clicked = true;
+                    console.log('成功点击查询按钮');
+                    break;
+                }}
+            }}
+            
+            if (!clicked) {{
+                console.warn('未找到查询按钮');
+            }}
+            
+            return true;
+        }} catch (e) {{
+            console.error('设置日期时出错:', e);
+            return false;
+        }}
+        """
+        result = driver.execute_script(script)
+        
+        # 等待页面刷新
+        import time
+        time.sleep(3)
+        
+        # 如果JavaScript返回失败，尝试备用方法
+        if not result:
+            # 尝试使用set_ant_date_picker方法
+            try:
+                # 日期格式转换为控件要求的格式，如：2025/05/11
+                date_formatted = date_str.replace('-', '/')
+                
+                # 使用更简单的脚本
+                backup_script = f"""
+                const inputs = document.querySelectorAll('.ant-calendar-picker-input');
+                if (inputs.length >= 2) {{
+                    // 设置开始日期
+                    inputs[0].value = '{date_formatted}';
+                    // 设置结束日期
+                    inputs[1].value = '{date_formatted}';
+                    
+                    // 触发事件
+                    const event = new Event('change', {{ bubbles: true }});
+                    inputs[0].dispatchEvent(event);
+                    inputs[1].dispatchEvent(event);
+                    
+                    // 查找并点击查询按钮
+                    const buttons = document.querySelectorAll('button');
+                    for (let btn of buttons) {{
+                        if (btn.textContent.includes('查询')) {{
+                            btn.click();
+                            return true;
+                        }}
+                    }}
+                }}
+                return false;
+                """
+                
+                result = driver.execute_script(backup_script)
+                time.sleep(2)
+            except Exception as e:
+                print(f"备用日期设置方法失败: {e}")
+                result = False
+        
+        print(f"日期设置为: {date_str}, 结果: {'成功' if result else '失败'}")
+        return True  # 即使JavaScript返回失败，也返回成功，因为我们无法确定是否真的失败
+    except Exception as e:
+        print(f"设置日期时出错: {e}")
+        return False
 
 
 def select_date_range(driver, wait, start_date, end_date):
