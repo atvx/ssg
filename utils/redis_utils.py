@@ -4,14 +4,27 @@ import uuid
 import time
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime, timedelta
-
+from redis import ConnectionPool
 from config.settings import settings
 
-# Redis连接
-# 使用REDIS_URL替代单独的参数配置
-redis_client = redis.from_url(
+# Redis连接池配置
+REDIS_POOL = ConnectionPool.from_url(
     settings.REDIS_URL,
-    decode_responses=True  # 自动解码为字符串
+    decode_responses=True,  # 自动解码为字符串
+    max_connections=10,     # 最大连接数
+    socket_timeout=5,       # socket 超时时间
+    socket_connect_timeout=2,  # 连接超时时间
+    socket_keepalive=True,    # 保持连接
+    health_check_interval=30,  # 健康检查间隔
+    retry_on_timeout=True,    # 超时时重试
+    retry_on_error=[redis.exceptions.ConnectionError]  # 连接错误时重试
+)
+
+# Redis客户端
+redis_client = redis.Redis(
+    connection_pool=REDIS_POOL,
+    retry_on_timeout=True,
+    socket_keepalive=True
 )
 
 
