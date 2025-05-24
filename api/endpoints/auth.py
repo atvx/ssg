@@ -29,7 +29,7 @@ class VerificationResponse(BaseModel):
     message: str
     data: dict = None
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post("/register", status_code=status.HTTP_201_CREATED, summary="用户注册")
 async def create_user(
     request: Request,
     username: Optional[str] = Query(None, description="用户名"),
@@ -145,7 +145,7 @@ async def create_user(
         )
 
 
-@router.post("/login")
+@router.post("/login", summary="用户登录")
 async def login_for_access_token(
     request: Request,
     db: Session = Depends(get_db)
@@ -210,7 +210,7 @@ async def login_for_access_token(
     )
 
 
-@router.get("/me")
+@router.get("/me", summary="获取当前用户信息")
 def read_users_me(current_user: User = Depends(get_current_active_user)):
     """获取当前用户信息"""
     return create_success_response(
@@ -226,7 +226,7 @@ def read_users_me(current_user: User = Depends(get_current_active_user)):
     )
 
 
-@router.put("/me")
+@router.put("/me", summary="更新当前用户信息")
 def update_user_me(
     user: UserUpdate,
     current_user: User = Depends(get_current_active_user),
@@ -247,7 +247,7 @@ def update_user_me(
     )
 
 
-@router.post("/change-password")
+@router.post("/change-password", summary="修改密码")
 def change_password(
     old_password: str,
     new_password: str,

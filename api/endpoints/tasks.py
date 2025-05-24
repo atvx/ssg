@@ -12,7 +12,7 @@ from utils.security import get_current_active_user
 router = APIRouter()
 
 
-@router.get("")
+@router.get("", summary="获取当前用户的任务列表")
 def read_tasks(
     skip: int = 0, 
     limit: int = 100, 
@@ -27,7 +27,7 @@ def read_tasks(
     )
 
 
-@router.get("/{task_id}")
+@router.get("/{task_id}", summary="获取制定任务详情")
 def read_task(
     task_id: int, 
     db: Session = Depends(get_db),
@@ -49,7 +49,7 @@ def read_task(
     )
 
 
-@router.get("/status/{task_id}")
+@router.get("/status/{task_id}", summary="获取任务状态")
 def get_task_status(
     task_id: int, 
     db: Session = Depends(get_db),
@@ -81,7 +81,7 @@ def get_task_status(
     )
 
 
-@router.delete("/{task_id}")
+@router.delete("/{task_id}", summary="删除任务")
 def remove_task(
     task_id: int, 
     db: Session = Depends(get_db),

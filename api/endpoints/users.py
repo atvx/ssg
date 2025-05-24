@@ -12,7 +12,7 @@ from utils.response_utils import create_success_response, create_error_response
 router = APIRouter()
 
 
-@router.get("")
+@router.get("", summary="获取用户列表")
 def read_users(
     skip: int = 0, 
     limit: int = 100, 
@@ -45,7 +45,7 @@ def read_users(
     )
 
 
-@router.get("/{user_id}")
+@router.get("/{user_id}", summary="获取用户详情")
 def read_user(
     user_id: int, 
     db: Session = Depends(get_db),
@@ -79,7 +79,7 @@ def read_user(
     )
 
 
-@router.put("/{user_id}")
+@router.put("/{user_id}", summary="更新用户信息")
 def update_user_by_id(
     user_id: int, 
     user: UserUpdate, 
@@ -125,7 +125,7 @@ def update_user_by_id(
         )
 
 
-@router.post("/{user_id}/activate")
+@router.post("/{user_id}/activate", summary="激活用户账号")
 def activate_user(
     user_id: int,
     db: Session = Depends(get_db),
@@ -168,7 +168,7 @@ def activate_user(
     )
 
 
-@router.post("/{user_id}/deactivate")
+@router.post("/{user_id}/deactivate", summary="停用用户账号")
 def deactivate_user(
     user_id: int,
     db: Session = Depends(get_db),
@@ -220,7 +220,7 @@ def deactivate_user(
     )
 
 
-@router.delete("/{user_id}")
+@router.delete("/{user_id}", summary="删除用户")
 def delete_user_by_id(
     user_id: int, 
     db: Session = Depends(get_db),
