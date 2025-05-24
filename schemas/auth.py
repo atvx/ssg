@@ -26,3 +26,57 @@ class LoginResponse(BaseModel):
     success: bool = True
     message: str = "登录成功"
     data: Token
+
+
+class RegisterResponse(BaseModel):
+    """注册响应模型（用于文档生成，实际使用APIResponse）"""
+    code: int = 201
+    success: bool = True
+    message: str = "用户注册成功"
+    data: Optional[Dict[str, Any]] = None
+
+
+class UserInfo(BaseModel):
+    """用户信息模型"""
+    id: int
+    username: str
+    mobile: str
+    is_active: bool
+    is_superuser: bool
+
+
+class UserInfoResponse(BaseModel):
+    """用户信息响应模型（用于文档生成，实际使用APIResponse）"""
+    code: int = 200
+    success: bool = True
+    message: str = "获取用户信息成功"
+    data: UserInfo
+
+
+class UserUpdateInfo(BaseModel):
+    """更新后的用户信息"""
+    id: int
+    username: str
+    mobile: str
+
+
+class UpdateUserResponse(BaseModel):
+    """更新用户信息响应模型（用于文档生成，实际使用APIResponse）"""
+    code: int = 200
+    success: bool = True
+    message: str = "用户信息更新成功"
+    data: UserUpdateInfo
+
+
+class PasswordChangeRequest(BaseModel):
+    """修改密码请求模型"""
+    old_password: str = Field(..., example="old_password123", description="原密码")
+    new_password: str = Field(..., example="new_password456", description="新密码")
+
+
+class ChangePasswordResponse(BaseModel):
+    """修改密码响应模型（用于文档生成，实际使用APIResponse）"""
+    code: int = 200
+    success: bool = True
+    message: str = "密码修改成功"
+    data: Optional[Dict[str, Any]] = None

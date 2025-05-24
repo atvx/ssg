@@ -58,8 +58,8 @@ def create_user(db: Session, user: user_schema.UserCreate):
         username=user.username,
         mobile=user.mobile,
         hashed_password=hashed_password,
-        is_active=user.is_active,
-        is_superuser=False,
+        is_active=False,  # 默认未激活
+        is_superuser=False,  # 默认非超级用户
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )

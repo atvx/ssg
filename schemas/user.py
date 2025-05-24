@@ -8,13 +8,11 @@ class UserBase(BaseModel):
     """用户基础模型"""
     username: str = Field(..., example="张三", description="用户名")
     mobile: Optional[str] = Field(None, example="13800138000", description="手机号")
-    is_active: bool = Field(False, description="是否激活")
 
 
 class UserCreate(UserBase):
     """用户创建模型"""
     password: str = Field(..., example="password123", description="密码")
-    is_superuser: bool = Field(False, description="是否为超级管理员")
 
     @validator('mobile')
     def validate_mobile(cls, v):
@@ -29,6 +27,12 @@ class UserCreate(UserBase):
         if len(v) < 6:
             raise ValueError("密码长度不能少于6位")
         return v
+
+
+class UserInternalCreate(UserCreate):
+    """内部使用的用户创建模型，包含额外的管理字段"""
+    is_active: bool = Field(False, description="是否激活")
+    is_superuser: bool = Field(False, description="是否为超级管理员")
 
 
 class UserUpdate(BaseModel):
