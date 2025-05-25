@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from api.endpoints import auth, sales, tasks
+from api.endpoints import auth, sales, tasks, orgs
 
 api_router = APIRouter()
 
@@ -22,4 +22,11 @@ api_router.include_router(
     tasks.router,
     prefix="/tasks",
     tags=["tasks"]
+)
+
+# 注册机构管理相关路由
+api_router.include_router(
+    orgs.router,
+    prefix="/orgs",
+    tags=["organizations"]
 )

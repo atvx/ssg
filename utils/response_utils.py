@@ -22,6 +22,7 @@ def create_error_response(message: str, error_type: ErrorType, code: int, detail
         code=code,
         success=False,
         message=message,
+        data=None,
         error=ErrorInfo(type=error_type, details=error_details)
     )
     return response.dict(exclude_none=True)

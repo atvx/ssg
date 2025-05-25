@@ -190,3 +190,24 @@ async def get_current_active_user(current_user = Depends(get_current_user)):
             detail={"msg": "用户账号已停用", "error_type": "inactive_user"}
         )
     return current_user
+
+
+async def get_current_superuser(current_user = Depends(get_current_active_user)):
+    """
+    获取当前超级用户（管理员）
+    
+    Args:
+        current_user: 当前活跃用户对象
+        
+    Returns:
+        User: 当前超级用户对象
+        
+    Raises:
+        HTTPException: 当用户不是超级用户时
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail={"msg": "权限不足，需要管理员权限", "error_type": "insufficient_permissions"}
+        )
+    return current_user

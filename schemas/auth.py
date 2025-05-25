@@ -25,7 +25,7 @@ class LoginResponse(BaseModel):
     code: int = 200
     success: bool = True
     message: str = "登录成功"
-    data: Token
+    data: Optional[Token] = None
 
 
 class RegisterResponse(BaseModel):
@@ -50,7 +50,7 @@ class UserInfoResponse(BaseModel):
     code: int = 200
     success: bool = True
     message: str = "获取用户信息成功"
-    data: UserInfo
+    data: Optional[UserInfo] = None
 
 
 class UserUpdateInfo(BaseModel):
@@ -65,7 +65,7 @@ class UpdateUserResponse(BaseModel):
     code: int = 200
     success: bool = True
     message: str = "用户信息更新成功"
-    data: UserUpdateInfo
+    data: Optional[UserUpdateInfo] = None
 
 
 class PasswordChangeRequest(BaseModel):

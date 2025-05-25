@@ -13,6 +13,7 @@ from utils.security import get_current_active_user, create_access_token
 from utils.response_utils import create_success_response, create_error_response
 from utils.redis_utils import VerificationManager
 from ws.manager import connection_manager
+from db.crud import get_user_by_username
 
 router = APIRouter()
 
@@ -100,49 +101,83 @@ async def login_for_access_token(
     - 包含访问令牌的响应
     """
     try:
+        username = login_data.username
+        password = login_data.password
+        
+        if not username or not password:
+            return create_error_response(
+                message="用户名或密码不能为空",
+                error_type=ErrorType.VALIDATION_ERROR,
+                code=status.HTTP_400_BAD_REQUEST,
+                details=[{
+                    "field": "username" if not username else "password",
+                    "message": "用户名或密码不能为空"
+                }]
+            )
+        
+        # 检查用户是否存在
+        user = get_user_by_username(db, username)
+        if not user:
+            return create_error_response(
+                message="用户名或密码不正确",
+                error_type=ErrorType.VALIDATION_ERROR,
+                code=status.HTTP_400_BAD_REQUEST,
+                details=[{
+                    "field": "credentials",
+                    "message": "用户名或密码不正确"
+                }]
+            )
+        
+        # 检查密码是否正确
+        from utils.security import verify_password
+        if not verify_password(password, user.hashed_password):
+            return create_error_response(
+                message="用户名或密码不正确",
+                error_type=ErrorType.VALIDATION_ERROR,
+                code=status.HTTP_400_BAD_REQUEST,
+                details=[{
+                    "field": "credentials",
+                    "message": "用户名或密码不正确"
+                }]
+            )
+        
+        # 检查用户是否激活
+        if not user.is_active:
+            return create_error_response(
+                message="账号未激活，请联系管理员激活您的账号",
+                error_type=ErrorType.AUTHORIZATION_ERROR,
+                code=status.HTTP_403_FORBIDDEN,
+                details=[{
+                    "field": "is_active",
+                    "message": "账号未激活，请联系管理员激活您的账号"
+                }]
+            )
+        
+        # 生成访问令牌
         try:
-            username = login_data.username
-            password = login_data.password
+            from datetime import timedelta
+            from utils.security import create_access_token
+            access_token_expires = timedelta(minutes=30)
+            access_token = create_access_token(
+                data={"sub": user.username}, expires_delta=access_token_expires
+            )
+            token_data = Token(access_token=access_token, token_type="bearer")
             
-            if not username or not password:
-                return create_error_response(
-                    message="用户名或密码不能为空",
-                    error_type=ErrorType.VALIDATION_ERROR,
-                    code=status.HTTP_400_BAD_REQUEST,
-                    details=[{
-                        "field": "username" if not username else "password",
-                        "message": "用户名或密码不能为空"
-                    }]
-                )
-                
-            token_data = login(db, username, password)
             return create_success_response(
                 code=StatusCode.OK,
                 message="登录成功",
                 data=token_data.dict()
             )
-        except ValueError as e:
-            error_msg = str(e)
+        except Exception as e:
             return create_error_response(
-                message=error_msg,
-                error_type=ErrorType.VALIDATION_ERROR,
-                code=status.HTTP_400_BAD_REQUEST,
+                message="生成令牌失败，请稍后重试",
+                error_type=ErrorType.SERVER_ERROR,
+                code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details=[{
-                    "field": "credentials",
-                    "message": error_msg
+                    "field": "system",
+                    "message": "生成令牌失败，请稍后重试"
                 }]
             )
-        except Exception:
-            return create_error_response(
-                message="无效的登录请求",
-                error_type=ErrorType.VALIDATION_ERROR,
-                code=status.HTTP_400_BAD_REQUEST,
-                details=[{
-                    "field": "request_body",
-                    "message": "无效的登录请求"
-                }]
-            )
-            
     except Exception as e:
         return create_error_response(
             message=f"登录失败: {str(e)}",

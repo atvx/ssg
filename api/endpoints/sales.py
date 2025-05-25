@@ -1,16 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status, Path
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime, timedelta
 import logging
 
 from db.database import get_db
-from db.crud import create_task, get_warehouses
+from db.crud import (
+    create_task, get_warehouses, 
+    create_monthly_sales_target, get_sales_targets,
+    get_monthly_sales_target, update_monthly_sales_target, delete_monthly_sales_target
+)
 from services.data_service import get_merged_data, get_all_platforms, get_all_warehouses
-from schemas.sales import SalesRecord, FetchDataRequest, WarehouseInfo
+from schemas.sales import (
+    SalesRecord, FetchDataRequest, WarehouseInfo,
+    MonthlySalesTarget, MonthlySalesTargetCreate, MonthlySalesTargetUpdate,
+    MonthlySalesTargetResponse, MonthlySalesTargetListResponse
+)
 from schemas.task import TaskCreate, Task
 from celery_app.tasks import fetch_meituan_task, fetch_duowei_task, fetch_all_data_task
-from utils.security import get_current_active_user
+from utils.security import get_current_active_user, get_current_superuser
 from schemas.user import User
 from schemas.response import APIResponse, StatusCode, ErrorType
 from services.sales_service import get_all_sales_data, get_sales_data_by_date
@@ -123,6 +131,322 @@ def fetch_data_get(
         logger.error(f"启动数据同步任务失败: {str(e)}")
         return create_error_response(
             message=f"启动数据同步任务失败: {str(e)}",
+            error_type=ErrorType.SERVER_ERROR,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details=[{
+                "field": "system",
+                "message": str(e)
+            }]
+        )
+
+# 月度销售目标相关接口
+@router.post("/targets", response_model=MonthlySalesTargetResponse, status_code=status.HTTP_201_CREATED, summary="新增销售目标")
+def create_sales_target(
+    target: MonthlySalesTargetCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superuser)
+):
+    """
+    新增月度销售目标
+    
+    参数:
+    - org_id: 组织ID
+    - year: 年份
+    - month: 月份
+    - target_income: 目标收入
+    - sort: 排序值，可选
+    
+    返回:
+    - 创建成功的销售目标信息
+    """
+    try:
+        try:
+            existing_targets = get_sales_targets(
+                db, 
+                org_id=target.org_id, 
+                year=target.year, 
+                month=target.month
+            )
+            
+            if existing_targets:
+                return create_error_response(
+                    message=f"该组织({target.org_id})在{target.year}年{target.month}月已存在销售目标",
+                    error_type=ErrorType.VALIDATION_ERROR,
+                    code=status.HTTP_400_BAD_REQUEST,
+                    details=[{
+                        "field": "org_id",
+                        "message": "组织在指定月份已存在销售目标"
+                    }]
+                )
+            
+            # 创建新目标
+            new_target = create_monthly_sales_target(db, target)
+            
+            return create_success_response(
+                code=StatusCode.CREATED,
+                message="销售目标创建成功",
+                data=new_target
+            )
+        except ValueError as e:
+            return create_error_response(
+                message=str(e),
+                error_type=ErrorType.VALIDATION_ERROR,
+                code=status.HTTP_400_BAD_REQUEST,
+                details=[{
+                    "field": "request_body",
+                    "message": str(e)
+                }]
+            )
+            
+    except Exception as e:
+        logger.error(f"创建销售目标失败: {str(e)}")
+        return create_error_response(
+            message=f"创建销售目标失败: {str(e)}",
+            error_type=ErrorType.SERVER_ERROR,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details=[{
+                "field": "system",
+                "message": str(e)
+            }]
+        )
+
+
+@router.get("/targets", response_model=MonthlySalesTargetListResponse, summary="获取销售目标列表")
+def list_sales_targets(
+    skip: int = 0,
+    limit: int = 100,
+    org_id: Optional[str] = None,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取月度销售目标列表，支持筛选
+    
+    参数:
+    - skip: 跳过记录数，默认0
+    - limit: 返回记录数上限，默认100
+    - org_id: 组织ID筛选，可选
+    - year: 年份筛选，可选
+    - month: 月份筛选，可选
+    
+    返回:
+    - 销售目标列表
+    """
+    try:
+        targets = get_sales_targets(
+            db,
+            skip=skip,
+            limit=limit,
+            org_id=org_id,
+            year=year,
+            month=month
+        )
+        
+        return create_success_response(
+            message="获取销售目标列表成功",
+            data=targets
+        )
+    except Exception as e:
+        logger.error(f"获取销售目标列表失败: {str(e)}")
+        return create_error_response(
+            message=f"获取销售目标列表失败: {str(e)}",
+            error_type=ErrorType.SERVER_ERROR,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details=[{
+                "field": "system",
+                "message": str(e)
+            }]
+        )
+
+
+@router.get("/targets/{target_id}", response_model=MonthlySalesTargetResponse, summary="获取销售目标详情")
+def get_sales_target(
+    target_id: int = Path(..., description="销售目标ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取单个销售目标详情
+    
+    参数:
+    - target_id: 销售目标ID
+    
+    返回:
+    - 销售目标详情
+    """
+    try:
+        target = get_monthly_sales_target(db, target_id)
+        
+        if not target:
+            return create_error_response(
+                message=f"ID为{target_id}的销售目标不存在",
+                error_type=ErrorType.NOT_FOUND,
+                code=status.HTTP_404_NOT_FOUND,
+                details=[{
+                    "field": "target_id",
+                    "message": "销售目标不存在"
+                }]
+            )
+            
+        return create_success_response(
+            message="获取销售目标详情成功",
+            data=target
+        )
+    except Exception as e:
+        logger.error(f"获取销售目标详情失败: {str(e)}")
+        return create_error_response(
+            message=f"获取销售目标详情失败: {str(e)}",
+            error_type=ErrorType.SERVER_ERROR,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details=[{
+                "field": "system",
+                "message": str(e)
+            }]
+        )
+
+
+@router.put("/targets/{target_id}", response_model=MonthlySalesTargetResponse, summary="更新销售目标")
+def update_sales_target(
+    target_id: int = Path(..., description="销售目标ID"),
+    target_update: MonthlySalesTargetUpdate = ...,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superuser)
+):
+    """
+    更新销售目标信息
+    
+    参数:
+    - target_id: 销售目标ID
+    - org_id: 组织ID，可选
+    - year: 年份，可选
+    - month: 月份，可选
+    - target_income: 目标收入，可选
+    - sort: 排序值，可选
+    
+    返回:
+    - 更新后的销售目标信息
+    """
+    try:
+        try:
+            # 检查目标是否存在
+            existing_target = get_monthly_sales_target(db, target_id)
+            
+            if not existing_target:
+                return create_error_response(
+                    message=f"ID为{target_id}的销售目标不存在",
+                    error_type=ErrorType.NOT_FOUND,
+                    code=status.HTTP_404_NOT_FOUND,
+                    details=[{
+                        "field": "target_id",
+                        "message": "销售目标不存在"
+                    }]
+                )
+            
+            # 如果修改了组织/年/月，检查是否与其他记录冲突
+            if (target_update.org_id or target_update.year or target_update.month) and \
+                (target_update.org_id != existing_target.org_id or 
+                target_update.year != existing_target.year or 
+                target_update.month != existing_target.month):
+                
+                org_id = target_update.org_id or existing_target.org_id
+                year = target_update.year or existing_target.year
+                month = target_update.month or existing_target.month
+                
+                conflicting_targets = get_sales_targets(
+                    db, org_id=org_id, year=year, month=month
+                )
+                
+                if any(t.id != target_id for t in conflicting_targets):
+                    return create_error_response(
+                        message=f"该组织({org_id})在{year}年{month}月已存在销售目标",
+                        error_type=ErrorType.VALIDATION_ERROR,
+                        code=status.HTTP_400_BAD_REQUEST,
+                        details=[{
+                            "field": "org_id",
+                            "message": "组织在指定月份已存在销售目标"
+                        }]
+                    )
+            
+            # 更新目标
+            updated_target = update_monthly_sales_target(db, target_id, target_update)
+            
+            return create_success_response(
+                message="销售目标更新成功",
+                data=updated_target
+            )
+        except ValueError as e:
+            return create_error_response(
+                message=str(e),
+                error_type=ErrorType.VALIDATION_ERROR,
+                code=status.HTTP_400_BAD_REQUEST,
+                details=[{
+                    "field": "request_body",
+                    "message": str(e)
+                }]
+            )
+            
+    except Exception as e:
+        logger.error(f"更新销售目标失败: {str(e)}")
+        return create_error_response(
+            message=f"更新销售目标失败: {str(e)}",
+            error_type=ErrorType.SERVER_ERROR,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details=[{
+                "field": "system",
+                "message": str(e)
+            }]
+        )
+
+
+@router.delete("/targets/{target_id}", summary="删除销售目标")
+def delete_sales_target(
+    target_id: int = Path(..., description="销售目标ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superuser)
+):
+    """
+    删除销售目标
+    
+    参数:
+    - target_id: 销售目标ID
+    
+    返回:
+    - 删除操作结果
+    """
+    try:
+        # 检查目标是否存在
+        existing_target = get_monthly_sales_target(db, target_id)
+        
+        if not existing_target:
+            return create_error_response(
+                message=f"ID为{target_id}的销售目标不存在",
+                error_type=ErrorType.NOT_FOUND,
+                code=status.HTTP_404_NOT_FOUND,
+                details=[{
+                    "field": "target_id",
+                    "message": "销售目标不存在"
+                }]
+            )
+        
+        # 删除目标
+        success = delete_monthly_sales_target(db, target_id)
+        
+        if success:
+            return create_success_response(
+                message="销售目标删除成功"
+            )
+        else:
+            return create_error_response(
+                message="销售目标删除失败",
+                error_type=ErrorType.SERVER_ERROR,
+                code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    except Exception as e:
+        logger.error(f"删除销售目标失败: {str(e)}")
+        return create_error_response(
+            message=f"删除销售目标失败: {str(e)}",
             error_type=ErrorType.SERVER_ERROR,
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             details=[{

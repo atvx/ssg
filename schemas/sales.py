@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime
 from decimal import Decimal
@@ -73,3 +73,52 @@ class DailySalesData(BaseModel):
     total_sales: float = Field(..., description="总销售额")
     total_orders: int = Field(..., description="总订单数")
     warehouses: List[WarehouseInfo] = Field([], description="仓库数据列表")
+
+
+class MonthlySalesTarget(BaseModel):
+    """月度销售目标模型"""
+    id: Optional[int] = None
+    org_id: str = Field(..., description="组织ID", max_length=64)
+    year: int = Field(..., description="年份", ge=2000, le=2100)
+    month: int = Field(..., description="月份", ge=1, le=12)
+    target_income: float = Field(..., description="目标收入")
+    sort: Optional[int] = Field(0, description="排序")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        orm_mode = True
+
+
+class MonthlySalesTargetCreate(BaseModel):
+    """创建月度销售目标请求模型"""
+    org_id: str = Field(..., description="组织ID", max_length=64)
+    year: int = Field(..., description="年份", ge=2000, le=2100)
+    month: int = Field(..., description="月份", ge=1, le=12)
+    target_income: float = Field(..., description="目标收入", ge=0)
+    sort: Optional[int] = Field(0, description="排序")
+
+
+class MonthlySalesTargetUpdate(BaseModel):
+    """更新月度销售目标请求模型"""
+    org_id: Optional[str] = Field(None, description="组织ID", max_length=64)
+    year: Optional[int] = Field(None, description="年份", ge=2000, le=2100)
+    month: Optional[int] = Field(None, description="月份", ge=1, le=12)
+    target_income: Optional[float] = Field(None, description="目标收入", ge=0)
+    sort: Optional[int] = Field(None, description="排序")
+
+
+class MonthlySalesTargetResponse(BaseModel):
+    """月度销售目标响应模型"""
+    code: int = 200
+    success: bool = True
+    message: str = "操作成功"
+    data: Optional[MonthlySalesTarget] = None
+
+
+class MonthlySalesTargetListResponse(BaseModel):
+    """月度销售目标列表响应模型"""
+    code: int = 200
+    success: bool = True
+    message: str = "获取目标列表成功"
+    data: Optional[List[MonthlySalesTarget]] = None

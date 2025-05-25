@@ -4,14 +4,18 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 import json
 import logging
+from sqlalchemy import and_, or_, desc, select
+from decimal import Decimal
 
+from . import models
 from models.user import User
-from models.sales import SalesRecord
-from models.auth import AuthSession
-from models.task import Task
 from schemas import user as user_schema
 from schemas import sales as sales_schema
 from schemas import task as task_schema
+from schemas import org as org_schema
+from schemas.user import UserCreate, UserUpdate
+from schemas.task import TaskCreate
+from schemas.sales import MonthlySalesTargetCreate, MonthlySalesTargetUpdate
 from utils.security import get_password_hash, verify_password
 
 # 配置日志
@@ -109,6 +113,20 @@ def authenticate_user(db: Session, username: str, password: str):
     return user
 
 
+def delete_user(db: Session, user_id: int):
+    user = get_user(db, user_id)
+    if not user:
+        return None
+    
+    try:
+        db.delete(user)
+        db.commit()
+        return user
+    except Exception as e:
+        db.rollback()
+        raise e
+
+
 # 销售数据相关操作
 def get_sales_records(
     db: Session, 
@@ -135,18 +153,18 @@ def get_sales_records(
         List[SalesRecord]: 销售记录列表
     """
     try:
-        query = db.query(SalesRecord)
+        query = db.query(models.SalesRecord)
         
         if start_date:
-            query = query.filter(SalesRecord.date >= start_date)
+            query = query.filter(models.SalesRecord.date >= start_date)
         if end_date:
-            query = query.filter(SalesRecord.date <= end_date)
+            query = query.filter(models.SalesRecord.date <= end_date)
         if platform:
-            query = query.filter(SalesRecord.platform == platform)
+            query = query.filter(models.SalesRecord.platform == platform)
         if warehouse_name:
-            query = query.filter(SalesRecord.warehouse_name == warehouse_name)
+            query = query.filter(models.SalesRecord.warehouse_name == warehouse_name)
         
-        return query.order_by(SalesRecord.date.desc()).offset(skip).limit(limit).all()
+        return query.order_by(models.SalesRecord.date.desc()).offset(skip).limit(limit).all()
     except SQLAlchemyError as e:
         logger.error(f"获取销售记录数据库错误: {str(e)}")
         raise
@@ -174,10 +192,10 @@ def get_sales_record_by_date_platform_warehouse(
         Optional[SalesRecord]: 销售记录，如果不存在则返回None
     """
     try:
-        return db.query(SalesRecord).filter(
-            SalesRecord.date == record_date,
-            SalesRecord.platform == platform,
-            SalesRecord.warehouse_name == warehouse_name
+        return db.query(models.SalesRecord).filter(
+            models.SalesRecord.date == record_date,
+            models.SalesRecord.platform == platform,
+            models.SalesRecord.warehouse_name == warehouse_name
         ).first()
     except SQLAlchemyError as e:
         logger.error(f"查询特定销售记录数据库错误: {str(e)}")
@@ -199,7 +217,7 @@ def create_sales_record(db: Session, record: sales_schema.SalesRecordCreate):
         SalesRecord: 创建的销售记录
     """
     try:
-        db_record = SalesRecord(
+        db_record = models.SalesRecord(
             date=record.date,
             platform=record.platform,
             warehouse_name=record.warehouse_name,
@@ -270,9 +288,9 @@ def get_warehouses(db: Session, platform: Optional[str] = None):
         List[Dict]: 仓库列表，每个元素包含name和platform字段
     """
     try:
-        query = db.query(SalesRecord.warehouse_name, SalesRecord.platform).distinct()
+        query = db.query(models.SalesRecord.warehouse_name, models.SalesRecord.platform).distinct()
         if platform:
-            query = query.filter(SalesRecord.platform == platform)
+            query = query.filter(models.SalesRecord.platform == platform)
         
         results = query.all()
         return [{"name": row[0], "platform": row[1]} for row in results]
@@ -286,14 +304,14 @@ def get_warehouses(db: Session, platform: Optional[str] = None):
 
 # 认证会话相关操作
 def get_active_auth_session(db: Session, platform: str):
-    return db.query(AuthSession).filter(
-        AuthSession.platform == platform,
-        AuthSession.status == "active"
-    ).order_by(AuthSession.created_at.desc()).first()
+    return db.query(models.AuthSession).filter(
+        models.AuthSession.platform == platform,
+        models.AuthSession.status == "active"
+    ).order_by(models.AuthSession.created_at.desc()).first()
 
 
 def create_auth_session(db: Session, platform: str, status: str, cookies: Optional[str] = None):
-    db_session = AuthSession(
+    db_session = models.AuthSession(
         platform=platform,
         status=status,
         cookies=cookies,
@@ -310,7 +328,7 @@ def create_auth_session(db: Session, platform: str, status: str, cookies: Option
 
 
 def update_auth_session(db: Session, session_id: int, status: str, cookies: Optional[str] = None):
-    db_session = db.query(AuthSession).filter(AuthSession.id == session_id).first()
+    db_session = db.query(models.AuthSession).filter(models.AuthSession.id == session_id).first()
     if db_session:
         db_session.status = status
         if cookies:
@@ -325,7 +343,7 @@ def update_auth_session(db: Session, session_id: int, status: str, cookies: Opti
 
 # 任务相关操作
 def create_task(db: Session, task: task_schema.TaskCreate, user_id: int):
-    db_task = Task(
+    db_task = models.Task(
         task_type=task.task_type,
         status="pending",
         progress=0,
@@ -338,12 +356,12 @@ def create_task(db: Session, task: task_schema.TaskCreate, user_id: int):
 
 
 def get_task(db: Session, task_id: int):
-    return db.query(Task).filter(Task.id == task_id).first()
+    return db.query(models.Task).filter(models.Task.id == task_id).first()
 
 
 def get_tasks_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
-    return db.query(Task).filter(Task.user_id == user_id).order_by(
-        Task.created_at.desc()
+    return db.query(models.Task).filter(models.Task.user_id == user_id).order_by(
+        models.Task.created_at.desc()
     ).offset(skip).limit(limit).all()
 
 
@@ -378,3 +396,226 @@ def delete_task(db: Session, task_id: int):
     db.delete(db_task)
     db.commit()
     return db_task
+
+
+# 月度销售目标CRUD操作
+def create_monthly_sales_target(db: Session, target: MonthlySalesTargetCreate) -> models.MonthlySalesTarget:
+    """创建新的月度销售目标"""
+    db_target = models.MonthlySalesTarget(
+        org_id=target.org_id,
+        year=target.year,
+        month=target.month,
+        target_income=target.target_income,
+        sort=target.sort
+    )
+    db.add(db_target)
+    db.commit()
+    db.refresh(db_target)
+    return db_target
+
+
+def get_sales_targets(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 100,
+    org_id: Optional[str] = None,
+    year: Optional[int] = None,
+    month: Optional[int] = None
+) -> List[models.MonthlySalesTarget]:
+    """获取月度销售目标列表，支持筛选"""
+    query = db.query(models.MonthlySalesTarget)
+    
+    # 应用筛选条件
+    if org_id:
+        query = query.filter(models.MonthlySalesTarget.org_id == org_id)
+    if year:
+        query = query.filter(models.MonthlySalesTarget.year == year)
+    if month:
+        query = query.filter(models.MonthlySalesTarget.month == month)
+    
+    # 按年月和排序字段排序
+    query = query.order_by(
+        desc(models.MonthlySalesTarget.year), 
+        desc(models.MonthlySalesTarget.month),
+        models.MonthlySalesTarget.sort
+    )
+    
+    return query.offset(skip).limit(limit).all()
+
+
+def get_monthly_sales_target(db: Session, target_id: int) -> Optional[models.MonthlySalesTarget]:
+    """根据ID获取单个月度销售目标"""
+    return db.query(models.MonthlySalesTarget).filter(models.MonthlySalesTarget.id == target_id).first()
+
+
+def update_monthly_sales_target(
+    db: Session, 
+    target_id: int, 
+    target_update: MonthlySalesTargetUpdate
+) -> Optional[models.MonthlySalesTarget]:
+    """更新月度销售目标"""
+    db_target = get_monthly_sales_target(db, target_id)
+    if not db_target:
+        return None
+    
+    update_data = target_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_target, key, value)
+    
+    db.commit()
+    db.refresh(db_target)
+    return db_target
+
+
+def delete_monthly_sales_target(db: Session, target_id: int) -> bool:
+    """删除月度销售目标"""
+    db_target = get_monthly_sales_target(db, target_id)
+    if not db_target:
+        return False
+    
+    db.delete(db_target)
+    db.commit()
+    return True
+
+
+# 机构相关操作
+def get_orgs(db: Session, skip: int = 0, limit: int = 100):
+    """获取机构列表"""
+    return db.query(models.Org).offset(skip).limit(limit).all()
+
+
+def get_org(db: Session, org_id: str):
+    """根据ID获取单个机构"""
+    return db.query(models.Org).filter(models.Org.id == org_id).first()
+
+
+def create_org(db: Session, org: org_schema.OrgCreate):
+    """创建新的机构"""
+    # 检查机构名是否已存在
+    existing_org = db.query(models.Org).filter(models.Org.name == org.name).first()
+    if existing_org:
+        raise ValueError(f"机构名 '{org.name}' 已被注册")
+    
+    # 检查ID是否已存在
+    existing_id = db.query(models.Org).filter(models.Org.id == org.id).first()
+    if existing_id:
+        raise ValueError(f"机构ID '{org.id}' 已被使用")
+    
+    # 创建机构对象，只包含允许的字段
+    db_org = models.Org(
+        id=org.id,
+        name=org.name,
+        org_type=org.org_type,
+        parent_id=org.parent_id,
+        sort=org.sort,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+    
+    try:
+        db.add(db_org)
+        db.commit()
+        db.refresh(db_org)
+        return db_org
+    except Exception as e:
+        db.rollback()
+        # 重新抛出异常，让上层处理
+        raise e
+
+
+def update_org(db: Session, org_id: str, org: org_schema.OrgUpdate):
+    """更新机构信息，只更新允许的字段"""
+    db_org = get_org(db, org_id)
+    if not db_org:
+        raise ValueError(f"找不到ID为'{org_id}'的机构")
+    
+    # 只更新允许的字段
+    update_data = org.dict(exclude_unset=True)
+    allowed_fields = {"name", "org_type", "parent_id", "sort"}
+    
+    for key, value in update_data.items():
+        if key in allowed_fields:
+            setattr(db_org, key, value)
+    
+    try:
+        db.commit()
+        db.refresh(db_org)
+        return db_org
+    except Exception as e:
+        db.rollback()
+        raise e
+
+
+def delete_org(db: Session, org_id: str) -> bool:
+    """删除机构"""
+    db_org = get_org(db, org_id)
+    if not db_org:
+        return False
+    
+    # 检查是否有子机构引用该机构
+    child_orgs = db.query(models.Org).filter(models.Org.parent_id == org_id).first()
+    if child_orgs:
+        raise ValueError(f"无法删除该机构，存在引用该机构作为父级机构的子机构")
+    
+    db.delete(db_org)
+    db.commit()
+    return True
+
+
+def get_org_list(db: Session, skip: int = 0, limit: int = 100, org_types: Optional[List[str]] = None):
+    """
+    获取机构列表，按指定的字段返回
+    
+    参数:
+        db: 数据库会话
+        skip: 跳过的记录数，默认为0
+        limit: 返回的最大记录数，默认为100
+        org_types: 机构类型列表，支持多选，默认为None表示不过滤
+        
+    返回:
+        List[Dict]: 机构列表，每个元素包含org_id, org_name, org_type, parent_id, sort字段
+    """
+    try:
+        # 使用SQLAlchemy的查询
+        # MySQL不支持NULLS FIRST语法，使用CASE WHEN方式处理NULL值排序
+        query = db.query(
+            models.Org.id.label('org_id'),
+            models.Org.name.label('org_name'),
+            models.Org.org_type,
+            models.Org.parent_id,
+            models.Org.sort
+        )
+        
+        # 应用org_types过滤条件
+        if org_types and len(org_types) > 0:
+            query = query.filter(models.Org.org_type.in_(org_types))
+        
+        # 排序
+        query = query.order_by(
+            # 先按NULL值排序（NULL值在前），然后按sort字段升序排序
+            models.Org.sort.is_(None).desc(),
+            models.Org.sort.asc()
+        )
+        
+        # 执行查询
+        result = query.offset(skip).limit(limit).all()
+        
+        # 将结果转换为字典列表
+        orgs = []
+        for row in result:
+            org_dict = {
+                'org_id': row.org_id,
+                'org_name': row.org_name,
+                'org_type': row.org_type,
+                'parent_id': row.parent_id,
+                'sort': row.sort
+            }
+            orgs.append(org_dict)
+        
+        return orgs
+    except SQLAlchemyError as e:
+        logger.error(f"获取机构列表数据库错误: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"获取机构列表失败: {str(e)}")
+        raise
