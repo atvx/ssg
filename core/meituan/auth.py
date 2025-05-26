@@ -374,6 +374,19 @@ def handle_phone_verification(driver, timeout=60):
             # 使用异步事件循环发送WebSocket消息
             import asyncio
             import threading
+            import json
+            
+            # 确保消息是字典格式，不是字符串
+            if not isinstance(message, dict):
+                try:
+                    message = json.loads(message)
+                except:
+                    logger.error(f"消息格式错误，无法解析为JSON: {message}")
+                    message = {
+                        "type": "verification_needed",
+                        "task_id": task_id,
+                        "message": f"请为手机 {phone_number} 输入美团验证码"
+                    }
             
             # 创建一个新的事件循环来执行异步操作
             def run_async_broadcast():
@@ -441,7 +454,18 @@ def handle_phone_verification(driver, timeout=60):
                     
                     async def send_timeout():
                         try:
-                            await connection_manager.broadcast(timeout_message, channel="verification")
+                            # 确保消息是字典格式
+                            if not isinstance(timeout_message, dict):
+                                logger.error(f"超时消息格式错误: {timeout_message}")
+                                timeout_dict = {
+                                    "type": "verification_timeout",
+                                    "task_id": task_id,
+                                    "message": "验证码输入超时"
+                                }
+                            else:
+                                timeout_dict = timeout_message
+                                
+                            await connection_manager.broadcast(timeout_dict, channel="verification")
                             logger.info("超时通知已通过WebSocket广播")
                         except Exception as e:
                             logger.error(f"发送超时通知失败: {str(e)}")
@@ -514,6 +538,29 @@ def handle_phone_verification(driver, timeout=60):
                     "task_id": task_id,
                     "message": "验证码验证成功"
                 }
+                
+                # 创建一个新线程来发送成功通知
+                def run_success_broadcast():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    async def send_success():
+                        try:
+                            await connection_manager.broadcast(success_message, channel="verification")
+                            logger.info("成功通知已通过WebSocket广播")
+                        except Exception as e:
+                            logger.error(f"发送成功通知失败: {str(e)}")
+                    
+                    try:
+                        loop.run_until_complete(send_success())
+                    finally:
+                        loop.close()
+                
+                success_thread = threading.Thread(target=run_success_broadcast)
+                success_thread.daemon = True
+                success_thread.start()
+                success_thread.join(timeout=5)
+                
                 logger.info(f"验证成功: {success_message}")
             except Exception as e:
                 logger.error(f"发送成功通知失败: {e}")

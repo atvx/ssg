@@ -31,10 +31,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     
-    # 数据库配置 - 直接设置默认值，而不依赖于环境变量
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
-    if not DATABASE_URL:
-        DATABASE_URL = "mysql+pymysql://qian:qian163@124.221.92.150:3306/ssgmlj"
+    # 数据库配置
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://qian:qian163@124.221.92.150:3306/ssgmlj?connect_timeout=10")
     
     # Redis配置
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://:163000@124.221.92.150:6378/0")

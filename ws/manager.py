@@ -1,6 +1,7 @@
 from fastapi import WebSocket
 from typing import Dict, List, Set, Any, Optional
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,18 @@ class ConnectionManager:
         """
         if client_id in self.active_connections:
             try:
+                # 确保消息是字典格式
+                if not isinstance(message, dict):
+                    logger.warning(f"消息不是字典格式，尝试转换: {message}")
+                    try:
+                        if isinstance(message, str):
+                            message = json.loads(message)
+                        else:
+                            message = {"data": message}
+                    except Exception as e:
+                        logger.error(f"消息格式转换失败: {e}")
+                        message = {"type": "error", "message": "消息格式错误"}
+                
                 await self.active_connections[client_id].send_json(message)
                 return True
             except Exception as e:
@@ -78,6 +91,18 @@ class ConnectionManager:
             channel: 可选的频道名称
         """
         disconnected_clients = []
+        
+        # 确保消息是字典格式
+        if not isinstance(message, dict):
+            logger.warning(f"广播消息不是字典格式，尝试转换: {message}")
+            try:
+                if isinstance(message, str):
+                    message = json.loads(message)
+                else:
+                    message = {"data": message}
+            except Exception as e:
+                logger.error(f"广播消息格式转换失败: {e}")
+                message = {"type": "error", "message": "消息格式错误"}
         
         for client_id, websocket in self.active_connections.items():
             # 如果指定了频道，只发送给订阅了该频道的客户端
@@ -103,6 +128,24 @@ class ConnectionManager:
             task_id: 验证任务ID
             message: 消息内容
         """
+        # 确保消息是字典格式
+        if not isinstance(message, dict):
+            logger.warning(f"验证通知消息不是字典格式，尝试转换: {message}")
+            try:
+                if isinstance(message, str):
+                    message = json.loads(message)
+                else:
+                    message = {
+                        "type": "verification_needed",
+                        "message": str(message)
+                    }
+            except Exception as e:
+                logger.error(f"验证通知消息格式转换失败: {e}")
+                message = {
+                    "type": "verification_needed",
+                    "message": "需要验证码"
+                }
+        
         # 添加任务ID到消息
         message["task_id"] = task_id
         
