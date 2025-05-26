@@ -361,28 +361,45 @@ def handle_phone_verification(driver, timeout=60):
                 "status": "pending"
             })
             
-            # 使用同步方式发送WebSocket通知，避免coroutine not awaited错误
-            try:
-                # 创建通知消息
-                message = {
-                    "type": "verification_needed",
-                    "task_id": task_id,
-                    "message": f"请为手机 {phone_number} 输入美团验证码"
-                }
-                # 直接将消息记录到日志，而不是异步广播
-                logger.warning(f"需要验证码: {message}")
-                # 异步广播的替代方法
-                import threading
-                def broadcast_message():
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(connection_manager.broadcast(message))
+            # 创建通知消息
+            message = {
+                "type": "verification_needed",
+                "task_id": task_id,
+                "message": f"请为手机 {phone_number} 输入美团验证码"
+            }
+            
+            # 记录到日志
+            logger.warning(f"需要验证码: {message}")
+            
+            # 使用异步事件循环发送WebSocket消息
+            import asyncio
+            import threading
+            
+            # 创建一个新的事件循环来执行异步操作
+            def run_async_broadcast():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # 创建一个异步函数来发送广播
+                async def send_broadcast():
+                    try:
+                        # 向verification频道广播消息
+                        await connection_manager.send_verification_notification(task_id, message)
+                        logger.info(f"验证码通知已通过WebSocket广播, task_id: {task_id}")
+                    except Exception as e:
+                        logger.error(f"WebSocket广播失败: {str(e)}")
+                
+                # 运行异步函数
+                try:
+                    loop.run_until_complete(send_broadcast())
+                finally:
                     loop.close()
-                # 在后台线程中执行
-                threading.Thread(target=broadcast_message).start()
-            except Exception as e:
-                logger.error(f"发送WebSocket通知失败: {e}")
+            
+            # 在后台线程中运行
+            broadcast_thread = threading.Thread(target=run_async_broadcast)
+            broadcast_thread.daemon = True
+            broadcast_thread.start()
+            broadcast_thread.join(timeout=5)  # 等待最多5秒确保消息发送
             
             # 轮询等待验证码
             logger.info(f"等待验证码输入，任务ID: {task_id}")
@@ -408,16 +425,37 @@ def handle_phone_verification(driver, timeout=60):
                     "status": "timeout",
                     "message": "验证码输入超时"
                 })
-                # 使用同步方式发送超时通知
-                try:
-                    timeout_message = {
-                        "type": "verification_timeout",
-                        "task_id": task_id,
-                        "message": "验证码输入超时"
-                    }
-                    logger.warning(f"验证码超时: {timeout_message}")
-                except Exception as e:
-                    logger.error(f"发送超时通知失败: {e}")
+                
+                # 发送超时通知
+                timeout_message = {
+                    "type": "verification_timeout",
+                    "task_id": task_id,
+                    "message": "验证码输入超时"
+                }
+                logger.warning(f"验证码超时: {timeout_message}")
+                
+                # 使用异步事件循环发送超时通知
+                def run_timeout_broadcast():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    async def send_timeout():
+                        try:
+                            await connection_manager.broadcast(timeout_message, channel="verification")
+                            logger.info("超时通知已通过WebSocket广播")
+                        except Exception as e:
+                            logger.error(f"发送超时通知失败: {str(e)}")
+                    
+                    try:
+                        loop.run_until_complete(send_timeout())
+                    finally:
+                        loop.close()
+                
+                timeout_thread = threading.Thread(target=run_timeout_broadcast)
+                timeout_thread.daemon = True
+                timeout_thread.start()
+                timeout_thread.join(timeout=5)
+                
                 return False
             
             # 输入验证码

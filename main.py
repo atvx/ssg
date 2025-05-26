@@ -26,7 +26,7 @@ from utils.response_utils import create_success_response, create_error_response,
 from ws import router as websocket_router
 
 # 创建数据库表
-# Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 
 # 创建FastAPI应用
 app = FastAPI(

@@ -9,6 +9,8 @@ from decimal import Decimal
 
 from . import models
 from models.user import User
+from models.task import Task
+from models.sales import SalesRecord
 from schemas import user as user_schema
 from schemas import sales as sales_schema
 from schemas import task as task_schema
@@ -153,18 +155,18 @@ def get_sales_records(
         List[SalesRecord]: 销售记录列表
     """
     try:
-        query = db.query(models.SalesRecord)
+        query = db.query(SalesRecord)
         
         if start_date:
-            query = query.filter(models.SalesRecord.date >= start_date)
+            query = query.filter(SalesRecord.date >= start_date)
         if end_date:
-            query = query.filter(models.SalesRecord.date <= end_date)
+            query = query.filter(SalesRecord.date <= end_date)
         if platform:
-            query = query.filter(models.SalesRecord.platform == platform)
+            query = query.filter(SalesRecord.platform == platform)
         if warehouse_name:
-            query = query.filter(models.SalesRecord.warehouse_name == warehouse_name)
+            query = query.filter(SalesRecord.warehouse_name == warehouse_name)
         
-        return query.order_by(models.SalesRecord.date.desc()).offset(skip).limit(limit).all()
+        return query.order_by(SalesRecord.date.desc()).offset(skip).limit(limit).all()
     except SQLAlchemyError as e:
         logger.error(f"获取销售记录数据库错误: {str(e)}")
         raise
@@ -192,10 +194,10 @@ def get_sales_record_by_date_platform_warehouse(
         Optional[SalesRecord]: 销售记录，如果不存在则返回None
     """
     try:
-        return db.query(models.SalesRecord).filter(
-            models.SalesRecord.date == record_date,
-            models.SalesRecord.platform == platform,
-            models.SalesRecord.warehouse_name == warehouse_name
+        return db.query(SalesRecord).filter(
+            SalesRecord.date == record_date,
+            SalesRecord.platform == platform,
+            SalesRecord.warehouse_name == warehouse_name
         ).first()
     except SQLAlchemyError as e:
         logger.error(f"查询特定销售记录数据库错误: {str(e)}")
@@ -217,7 +219,7 @@ def create_sales_record(db: Session, record: sales_schema.SalesRecordCreate):
         SalesRecord: 创建的销售记录
     """
     try:
-        db_record = models.SalesRecord(
+        db_record = SalesRecord(
             date=record.date,
             platform=record.platform,
             warehouse_name=record.warehouse_name,
@@ -288,9 +290,9 @@ def get_warehouses(db: Session, platform: Optional[str] = None):
         List[Dict]: 仓库列表，每个元素包含name和platform字段
     """
     try:
-        query = db.query(models.SalesRecord.warehouse_name, models.SalesRecord.platform).distinct()
+        query = db.query(SalesRecord.warehouse_name, SalesRecord.platform).distinct()
         if platform:
-            query = query.filter(models.SalesRecord.platform == platform)
+            query = query.filter(SalesRecord.platform == platform)
         
         results = query.all()
         return [{"name": row[0], "platform": row[1]} for row in results]
@@ -343,7 +345,7 @@ def update_auth_session(db: Session, session_id: int, status: str, cookies: Opti
 
 # 任务相关操作
 def create_task(db: Session, task: task_schema.TaskCreate, user_id: int):
-    db_task = models.Task(
+    db_task = Task(
         task_type=task.task_type,
         status="pending",
         progress=0,
@@ -356,12 +358,12 @@ def create_task(db: Session, task: task_schema.TaskCreate, user_id: int):
 
 
 def get_task(db: Session, task_id: int):
-    return db.query(models.Task).filter(models.Task.id == task_id).first()
+    return db.query(Task).filter(Task.id == task_id).first()
 
 
 def get_tasks_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
-    return db.query(models.Task).filter(models.Task.user_id == user_id).order_by(
-        models.Task.created_at.desc()
+    return db.query(Task).filter(Task.user_id == user_id).order_by(
+        Task.created_at.desc()
     ).offset(skip).limit(limit).all()
 
 

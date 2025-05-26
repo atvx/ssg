@@ -8,6 +8,7 @@ from celery import shared_task
 from celery_app.celery import celery_app
 from db.database import SessionLocal, get_db
 from db.crud import update_task, create_or_update_sales_record
+from models.task import Task
 from schemas.sales import SalesRecordCreate
 from schemas.task import TaskUpdate
 from services.meituan_service import fetch_meituan_data
