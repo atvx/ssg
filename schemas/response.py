@@ -55,8 +55,9 @@ class APIResponse(BaseModel):
     data: Optional[Any] = Field(None, description="响应数据")
     error: Optional[ErrorInfo] = Field(None, description="错误信息")
     
-    class Config:
-        json_encoders = {
+    model_config = {
+        "json_encoders": {
             # 自定义编码器，如有需要
-        }
-        exclude_none = True  # 排除None值 
+        },
+        "exclude_none": True  # 排除None值
+    } 
