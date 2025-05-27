@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Dict, Any
 import logging
 import json
+import time
 
 from .manager import connection_manager
 from utils.redis_utils import VerificationManager
@@ -33,12 +34,22 @@ async def websocket_root(websocket: WebSocket):
         })
         
         # 默认订阅状态频道
-        connection_manager.update_subscriptions(client_id, ["status"])
+        connection_manager.update_subscriptions(client_id, ["status"], replace=True)
         
         while True:
             # 接收消息，先以文本方式接收
             try:
                 message = await websocket.receive_text()
+                
+                # 处理特殊的文本消息
+                if message.strip().upper() == "PING":
+                    await websocket.send_json({
+                        "type": "pong",
+                        "timestamp": int(time.time() * 1000)
+                    })
+                    logger.debug(f"收到PING文本消息，已回复PONG")
+                    continue
+                
                 try:
                     # 尝试解析为JSON
                     data = json.loads(message)
@@ -49,6 +60,7 @@ async def websocket_root(websocket: WebSocket):
                     if message_type == "subscribe":
                         # 处理订阅请求
                         channels = data.get("channels", [])
+                        replace = data.get("replace", False)
                         
                         if not channels:
                             await websocket.send_json({
@@ -58,19 +70,24 @@ async def websocket_root(websocket: WebSocket):
                             continue
                         
                         # 更新客户端订阅
-                        connection_manager.update_subscriptions(client_id, channels)
+                        connection_manager.update_subscriptions(client_id, channels, replace=replace)
+                        
+                        # 获取当前所有订阅的频道
+                        current_channels = list(connection_manager.subscriptions.get(client_id, set()))
                         
                         await websocket.send_json({
                             "type": "subscribed",
-                            "channels": channels,
+                            "channels": current_channels,
                             "message": "订阅成功"
                         })
+                        logger.info(f"客户端 {client_id} 订阅成功: {current_channels}")
                     elif message_type == "ping":
                         # 处理ping消息
                         await websocket.send_json({
                             "type": "pong",
-                            "timestamp": data.get("timestamp", 0)
+                            "timestamp": data.get("timestamp", int(time.time() * 1000))
                         })
+                        logger.debug(f"收到PING JSON消息，已回复PONG")
                     else:
                         await websocket.send_json({
                             "type": "echo",
@@ -94,6 +111,7 @@ async def websocket_root(websocket: WebSocket):
     
     except WebSocketDisconnect:
         connection_manager.disconnect(client_id)
+        logger.info(f"客户端 {client_id} 断开连接")
     except Exception as e:
         logger.error(f"根WebSocket处理时出错: {e}")
         connection_manager.disconnect(client_id)
@@ -116,12 +134,23 @@ async def websocket_verification(websocket: WebSocket):
         })
         
         # 订阅验证频道
-        connection_manager.update_subscriptions(client_id, ["verification"])
+        connection_manager.update_subscriptions(client_id, ["verification"], replace=True)
+        logger.info(f"客户端 {client_id} 已订阅verification频道")
         
         while True:
             # 接收消息，先以文本方式接收
             try:
                 message = await websocket.receive_text()
+                
+                # 处理特殊的文本消息
+                if message.strip().upper() == "PING":
+                    await websocket.send_json({
+                        "type": "pong",
+                        "timestamp": int(time.time() * 1000)
+                    })
+                    logger.debug(f"收到PING文本消息，已回复PONG")
+                    continue
+                
                 try:
                     # 尝试解析为JSON
                     data = json.loads(message)
@@ -150,6 +179,7 @@ async def websocket_verification(websocket: WebSocket):
                                 "message": "验证码已接收",
                                 "task_id": task_id
                             })
+                            logger.info(f"已接收客户端 {client_id} 提交的验证码，任务ID: {task_id}")
                         else:
                             await websocket.send_json({
                                 "type": "error",
@@ -160,8 +190,9 @@ async def websocket_verification(websocket: WebSocket):
                         # 处理ping消息
                         await websocket.send_json({
                             "type": "pong",
-                            "timestamp": data.get("timestamp", 0)
+                            "timestamp": data.get("timestamp", int(time.time() * 1000))
                         })
+                        logger.debug(f"收到PING JSON消息，已回复PONG")
                     else:
                         await websocket.send_json({
                             "type": "echo",
@@ -185,6 +216,7 @@ async def websocket_verification(websocket: WebSocket):
     
     except WebSocketDisconnect:
         connection_manager.disconnect(client_id)
+        logger.info(f"客户端 {client_id} 断开连接")
     except Exception as e:
         logger.error(f"WebSocket处理时出错: {e}")
         connection_manager.disconnect(client_id)
@@ -206,10 +238,24 @@ async def websocket_status(websocket: WebSocket):
             "client_id": client_id
         })
         
+        # 默认订阅状态频道
+        connection_manager.update_subscriptions(client_id, ["status"], replace=True)
+        logger.info(f"客户端 {client_id} 已订阅status频道")
+        
         while True:
             # 接收消息，先以文本方式接收
             try:
                 message = await websocket.receive_text()
+                
+                # 处理特殊的文本消息
+                if message.strip().upper() == "PING":
+                    await websocket.send_json({
+                        "type": "pong",
+                        "timestamp": int(time.time() * 1000)
+                    })
+                    logger.debug(f"收到PING文本消息，已回复PONG")
+                    continue
+                
                 try:
                     # 尝试解析为JSON
                     data = json.loads(message)
@@ -220,6 +266,7 @@ async def websocket_status(websocket: WebSocket):
                     if message_type == "subscribe":
                         # 处理订阅请求
                         channels = data.get("channels", [])
+                        replace = data.get("replace", False)
                         
                         if not channels:
                             await websocket.send_json({
@@ -229,19 +276,24 @@ async def websocket_status(websocket: WebSocket):
                             continue
                         
                         # 更新客户端订阅
-                        connection_manager.update_subscriptions(client_id, channels)
+                        connection_manager.update_subscriptions(client_id, channels, replace=replace)
+                        
+                        # 获取当前所有订阅的频道
+                        current_channels = list(connection_manager.subscriptions.get(client_id, set()))
                         
                         await websocket.send_json({
                             "type": "subscribed",
-                            "channels": channels,
+                            "channels": current_channels,
                             "message": "订阅成功"
                         })
+                        logger.info(f"客户端 {client_id} 订阅成功: {current_channels}")
                     elif message_type == "ping":
                         # 处理ping消息
                         await websocket.send_json({
                             "type": "pong",
-                            "timestamp": data.get("timestamp", 0)
+                            "timestamp": data.get("timestamp", int(time.time() * 1000))
                         })
+                        logger.debug(f"收到PING JSON消息，已回复PONG")
                     else:
                         await websocket.send_json({
                             "type": "echo",
@@ -265,6 +317,7 @@ async def websocket_status(websocket: WebSocket):
     
     except WebSocketDisconnect:
         connection_manager.disconnect(client_id)
+        logger.info(f"客户端 {client_id} 断开连接")
     except Exception as e:
         logger.error(f"状态WebSocket处理时出错: {e}")
         connection_manager.disconnect(client_id) 

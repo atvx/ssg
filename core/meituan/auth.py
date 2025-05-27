@@ -7,7 +7,7 @@ import logging
 import re
 from datetime import datetime
 from urllib.parse import urlparse
-from utils.redis_utils import VerificationManager
+from utils.redis_utils import VerificationManager, publish_ws_message
 from ws.manager import connection_manager
 
 from config.settings import ACCOUNT_CONFIG, SLIDER_VERIFY_MODE
@@ -323,6 +323,63 @@ def handle_phone_verification(driver, timeout=60):
                 if send_button and send_button.is_displayed() and send_button.is_enabled():
                     send_button.click()
                     logger.info("点击发送验证码按钮")
+                    
+                    # 处理可能出现的滑块验证
+                    time.sleep(1.5)  # 等待滑块加载
+                    try:
+                        from utils.browser_utils import handle_iframe_slider
+                        
+                        # 检查是否有iframe
+                        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+                        
+                        # 先检查主文档中是否有滑块
+                        slider_elements = driver.find_elements(By.CSS_SELECTOR, ".yoda-slider-wrapper, .yodaBox-wrapper, #captcha-box, #yodaBox, .boxStatic")
+                        
+                        if slider_elements:
+                            logger.info("发送验证码后在主文档中检测到滑块验证，尝试处理")
+                            handle_iframe_slider(driver, WebDriverWait(driver, 10))
+                            logger.info("滑块验证处理完成")
+                        elif iframes:
+                            logger.info(f"发现 {len(iframes)} 个iframe，尝试检查是否存在滑块验证")
+                            # 保存当前上下文
+                            current_context = driver.current_window_handle
+                            
+                            # 依次检查每个iframe
+                            iframe_found = False
+                            for i, iframe in enumerate(iframes):
+                                try:
+                                    driver.switch_to.frame(iframe)
+                                    iframe_slider_elements = driver.find_elements(By.CSS_SELECTOR, ".yoda-slider-wrapper, .yodaBox-wrapper, #captcha-box, #yodaBox, .boxStatic")
+                                    
+                                    if iframe_slider_elements:
+                                        logger.info(f"在iframe {i+1} 中发现滑块验证，尝试处理")
+                                        handle_iframe_slider(driver, WebDriverWait(driver, 10))
+                                        logger.info("滑块验证处理完成")
+                                        iframe_found = True
+                                        # 处理完滑块后，需要返回主文档
+                                        driver.switch_to.default_content()
+                                        break
+                                    else:
+                                        # 恢复到主文档
+                                        driver.switch_to.default_content()
+                                except Exception as e:
+                                    logger.warning(f"检查iframe {i+1} 时出错: {e}")
+                                    # 恢复到主文档
+                                    driver.switch_to.default_content()
+                            
+                            # 无论是否找到滑块，确保最终回到主文档
+                            try:
+                                driver.switch_to.default_content()
+                            except Exception:
+                                pass
+                            
+                            # 如果没有在任何iframe中找到滑块，记录日志
+                            if not iframe_found:
+                                logger.info("在所有iframe中均未发现滑块验证")
+                        else:
+                            logger.info("发送验证码后未检测到滑块验证")
+                    except Exception as e:
+                        logger.warning(f"处理发送验证码后的滑块验证失败: {e}", exc_info=True)
             except Exception as e:
                 logger.error(f"点击发送验证码按钮失败: {e}")
             
@@ -371,49 +428,13 @@ def handle_phone_verification(driver, timeout=60):
             # 记录到日志
             logger.warning(f"需要验证码: {message}")
             
-            # 使用异步事件循环发送WebSocket消息
-            import asyncio
-            import threading
-            import json
-            
-            # 确保消息是字典格式，不是字符串
-            if not isinstance(message, dict):
-                try:
-                    message = json.loads(message)
-                except:
-                    logger.error(f"消息格式错误，无法解析为JSON: {message}")
-                    message = {
-                        "type": "verification_needed",
-                        "task_id": task_id,
-                        "message": f"请为手机 {phone_number} 输入美团验证码"
-                    }
-            
-            # 创建一个新的事件循环来执行异步操作
-            def run_async_broadcast():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+            # 通过Redis发布验证码通知，用于跨进程通信
+            publish_result = publish_ws_message("verification", message)
+            if publish_result:
+                logger.info(f"验证码通知已通过Redis发布，任务ID: {task_id}")
+            else:
+                logger.error(f"验证码通知Redis发布失败，任务ID: {task_id}")
                 
-                # 创建一个异步函数来发送广播
-                async def send_broadcast():
-                    try:
-                        # 向verification频道广播消息
-                        await connection_manager.send_verification_notification(task_id, message)
-                        logger.info(f"验证码通知已通过WebSocket广播, task_id: {task_id}")
-                    except Exception as e:
-                        logger.error(f"WebSocket广播失败: {str(e)}")
-                
-                # 运行异步函数
-                try:
-                    loop.run_until_complete(send_broadcast())
-                finally:
-                    loop.close()
-            
-            # 在后台线程中运行
-            broadcast_thread = threading.Thread(target=run_async_broadcast)
-            broadcast_thread.daemon = True
-            broadcast_thread.start()
-            broadcast_thread.join(timeout=5)  # 等待最多5秒确保消息发送
-            
             # 轮询等待验证码
             logger.info(f"等待验证码输入，任务ID: {task_id}")
             start_time = time.time()
@@ -447,38 +468,12 @@ def handle_phone_verification(driver, timeout=60):
                 }
                 logger.warning(f"验证码超时: {timeout_message}")
                 
-                # 使用异步事件循环发送超时通知
-                def run_timeout_broadcast():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    
-                    async def send_timeout():
-                        try:
-                            # 确保消息是字典格式
-                            if not isinstance(timeout_message, dict):
-                                logger.error(f"超时消息格式错误: {timeout_message}")
-                                timeout_dict = {
-                                    "type": "verification_timeout",
-                                    "task_id": task_id,
-                                    "message": "验证码输入超时"
-                                }
-                            else:
-                                timeout_dict = timeout_message
-                                
-                            await connection_manager.broadcast(timeout_dict, channel="verification")
-                            logger.info("超时通知已通过WebSocket广播")
-                        except Exception as e:
-                            logger.error(f"发送超时通知失败: {str(e)}")
-                    
-                    try:
-                        loop.run_until_complete(send_timeout())
-                    finally:
-                        loop.close()
-                
-                timeout_thread = threading.Thread(target=run_timeout_broadcast)
-                timeout_thread.daemon = True
-                timeout_thread.start()
-                timeout_thread.join(timeout=5)
+                # 通过Redis发布超时通知
+                publish_result = publish_ws_message("verification", timeout_message)
+                if publish_result:
+                    logger.info(f"超时通知已通过Redis发布，任务ID: {task_id}")
+                else:
+                    logger.error(f"超时通知Redis发布失败，任务ID: {task_id}")
                 
                 return False
             
@@ -531,7 +526,7 @@ def handle_phone_verification(driver, timeout=60):
                 "message": "验证码验证成功"
             })
             
-            # 使用同步方式发送成功通知
+            # 发送成功通知
             try:
                 success_message = {
                     "type": "verification_success",
@@ -539,27 +534,12 @@ def handle_phone_verification(driver, timeout=60):
                     "message": "验证码验证成功"
                 }
                 
-                # 创建一个新线程来发送成功通知
-                def run_success_broadcast():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    
-                    async def send_success():
-                        try:
-                            await connection_manager.broadcast(success_message, channel="verification")
-                            logger.info("成功通知已通过WebSocket广播")
-                        except Exception as e:
-                            logger.error(f"发送成功通知失败: {str(e)}")
-                    
-                    try:
-                        loop.run_until_complete(send_success())
-                    finally:
-                        loop.close()
-                
-                success_thread = threading.Thread(target=run_success_broadcast)
-                success_thread.daemon = True
-                success_thread.start()
-                success_thread.join(timeout=5)
+                # 通过Redis发布成功通知
+                publish_result = publish_ws_message("verification", success_message)
+                if publish_result:
+                    logger.info(f"成功通知已通过Redis发布，任务ID: {task_id}")
+                else:
+                    logger.error(f"成功通知Redis发布失败，任务ID: {task_id}")
                 
                 logger.info(f"验证成功: {success_message}")
             except Exception as e:

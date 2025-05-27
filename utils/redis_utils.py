@@ -27,6 +27,39 @@ redis_client = redis.Redis(
     socket_keepalive=True
 )
 
+# 用于广播的Redis发布/订阅通道
+REDIS_BROADCAST_CHANNEL = "ws_broadcast"
+
+def publish_ws_message(channel: str, message: dict) -> bool:
+    """
+    通过Redis发布WebSocket消息，用于跨进程通信
+    
+    Args:
+        channel: WebSocket频道名称
+        message: 要广播的消息
+    
+    Returns:
+        bool: 发布成功返回True，否则返回False
+    """
+    try:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        payload = {
+            "channel": channel,
+            "message": message,
+            "timestamp": datetime.now().isoformat()
+        }
+        json_payload = json.dumps(payload)
+        logger.info(f"发布WebSocket消息到Redis: 频道={channel}, 消息类型={message.get('type', 'unknown')}")
+        redis_client.publish(REDIS_BROADCAST_CHANNEL, json_payload)
+        return True
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Redis发布消息失败: {e}", exc_info=True)
+        return False
+
 
 class VerificationManager:
     """验证码任务管理器"""

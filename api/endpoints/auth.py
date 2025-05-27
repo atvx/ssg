@@ -11,7 +11,7 @@ from schemas.auth import Token, Login, LoginResponse, RegisterResponse, UserInfo
 from schemas.response import APIResponse, StatusCode, ErrorType
 from utils.security import get_current_active_user, create_access_token
 from utils.response_utils import create_success_response, create_error_response
-from utils.redis_utils import VerificationManager
+from utils.redis_utils import VerificationManager, publish_ws_message
 from ws.manager import connection_manager
 from db.crud import get_user_by_username
 
@@ -400,16 +400,13 @@ async def submit_verification_code(
                     }]
                 )
             
-            # 异步通知WebSocket客户端
-            background_tasks.add_task(
-                connection_manager.send_verification_notification,
-                task_id,
-                {
-                    "type": "code_submitted",
-                    "task_id": task_id,
-                    "code": request.code
-                }
-            )
+            # 通过Redis发布验证码提交通知
+            notification = {
+                "type": "code_submitted",
+                "task_id": task_id,
+                "code": request.code
+            }
+            publish_ws_message("verification", notification)
                 
             return VerificationResponse(
                 task_id=task_id,

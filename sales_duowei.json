@@ -1,0 +1,26 @@
+[
+  {
+    "incomeAmt": 2551.7,
+    "salesCartCount": 9,
+    "avgIncomeAmt": 283.52,
+    "name": "昆明龙泉仓"
+  },
+  {
+    "incomeAmt": 4255.7,
+    "salesCartCount": 11,
+    "avgIncomeAmt": 386.88,
+    "name": "重庆江北仓"
+  },
+  {
+    "incomeAmt": 5531.1,
+    "salesCartCount": 12,
+    "avgIncomeAmt": 460.93,
+    "name": "重庆渝北仓"
+  },
+  {
+    "incomeAmt": 3928.7,
+    "salesCartCount": 9,
+    "avgIncomeAmt": 436.52,
+    "name": "重庆二郎仓"
+  }
+]
