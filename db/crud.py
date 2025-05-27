@@ -11,6 +11,7 @@ from . import models
 from models.user import User
 from models.task import Task
 from models.sales import SalesRecord
+from models.ext_account import ExtAccount
 from schemas import user as user_schema
 from schemas import sales as sales_schema
 from schemas import task as task_schema
@@ -621,3 +622,137 @@ def get_org_list(db: Session, skip: int = 0, limit: int = 100, org_types: Option
     except Exception as e:
         logger.error(f"获取机构列表失败: {str(e)}")
         raise
+
+
+# 外部账号相关操作
+def get_ext_account(db: Session, account_id: int) -> Optional[ExtAccount]:
+    """
+    根据ID获取外部账号
+    
+    Args:
+        db: 数据库会话
+        account_id: 账号ID
+        
+    Returns:
+        Optional[ExtAccount]: 找到的账号，不存在则返回None
+    """
+    return db.query(ExtAccount).filter(ExtAccount.id == account_id).first()
+
+def get_ext_accounts_by_user(db: Session, user_id: int) -> List[ExtAccount]:
+    """
+    获取用户的所有外部账号
+    
+    Args:
+        db: 数据库会话
+        user_id: 用户ID
+        
+    Returns:
+        List[ExtAccount]: 账号列表
+    """
+    return db.query(ExtAccount).filter(ExtAccount.user_id == user_id).all()
+
+def get_ext_account_by_platform(db: Session, user_id: int, platform: str) -> Optional[ExtAccount]:
+    """
+    获取用户特定平台的外部账号
+    
+    Args:
+        db: 数据库会话
+        user_id: 用户ID
+        platform: 平台名称
+        
+    Returns:
+        Optional[ExtAccount]: 找到的账号，不存在则返回None
+    """
+    return db.query(ExtAccount).filter(
+        ExtAccount.user_id == user_id,
+        ExtAccount.platform == platform
+    ).first()
+
+def create_ext_account(db: Session, user_id: int, platform: str, username: str, password: str) -> ExtAccount:
+    """
+    创建外部账号
+    
+    Args:
+        db: 数据库会话
+        user_id: 用户ID
+        platform: 平台名称
+        username: 用户名
+        password: 密码
+        
+    Returns:
+        ExtAccount: 创建的账号
+    """
+    # 检查是否已存在同平台账号
+    existing = get_ext_account_by_platform(db, user_id, platform)
+    if existing:
+        raise ValueError(f"用户已有{platform}平台账号")
+    
+    # 创建新账号
+    account = ExtAccount(
+        user_id=user_id,
+        platform=platform,
+        username=username,
+        password=password  # 注意：实际应用中应该加密存储
+    )
+    
+    try:
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+        return account
+    except Exception as e:
+        db.rollback()
+        raise e
+
+def update_ext_account(db: Session, account_id: int, username: Optional[str] = None, password: Optional[str] = None) -> Optional[ExtAccount]:
+    """
+    更新外部账号
+    
+    Args:
+        db: 数据库会话
+        account_id: 账号ID
+        username: 新用户名（可选）
+        password: 新密码（可选）
+        
+    Returns:
+        Optional[ExtAccount]: 更新后的账号，不存在则返回None
+    """
+    account = get_ext_account(db, account_id)
+    if not account:
+        return None
+    
+    if username:
+        account.username = username
+    if password:
+        account.password = password
+    
+    try:
+        db.commit()
+        db.refresh(account)
+        return account
+    except Exception as e:
+        db.rollback()
+        raise e
+
+def delete_ext_account(db: Session, account_id: int) -> bool:
+    """
+    删除外部账号
+    
+    Args:
+        db: 数据库会话
+        account_id: 账号ID
+        
+    Returns:
+        bool: 删除成功返回True，否则返回False
+    """
+    account = get_ext_account(db, account_id)
+    if not account:
+        return False
+    
+    try:
+        db.delete(account)
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        raise e

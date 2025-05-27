@@ -9,6 +9,8 @@ from datetime import datetime
 from urllib.parse import urlparse
 from utils.redis_utils import VerificationManager, publish_ws_message
 from ws.manager import connection_manager
+from db.crud import get_ext_account_by_platform
+from sqlalchemy.orm import Session
 
 from config.settings import ACCOUNT_CONFIG, SLIDER_VERIFY_MODE
 from utils.browser_utils import handle_iframe_slider
@@ -118,8 +120,44 @@ def login_with_phone(driver, wait, phone_number):
         return False
 
 
-def login_with_account(driver, wait, cookies_file):
-    """使用账号和密码登录"""
+def login_with_account(driver, wait, cookies_file, db: Session = None, user_id: int = None, platform: str = "meituan"):
+    """
+    使用账号和密码登录
+    
+    Args:
+        driver: WebDriver对象
+        wait: WebDriverWait对象
+        cookies_file: cookies文件路径
+        db: 数据库会话（可选）
+        user_id: 用户ID（可选）
+        platform: 平台名称（默认为meituan）
+    
+    Returns:
+        bool: 登录成功返回True，否则返回False
+    """
+    # 获取账号信息
+    username = None
+    password = None
+    
+    # 首先尝试从数据库获取账号信息
+    if db and user_id:
+        logger.info(f"尝试获取用户ID {user_id} 的 {platform} 平台账号信息")
+        ext_account = get_ext_account_by_platform(db, user_id, platform)
+        if ext_account:
+            username = ext_account.username
+            password = ext_account.password
+            logger.info(f"从数据库获取到 {platform} 平台账号信息")
+    
+    # 如果数据库中没有账号信息，则使用配置文件中的账号信息
+    if not username or not password:
+        logger.warning(f"未从数据库获取到账号信息，将使用配置文件中的账号信息")
+        username = ACCOUNT_CONFIG.get("USERNAME")
+        password = ACCOUNT_CONFIG.get("PASSWORD")
+        
+    if not username or not password:
+        logger.error("账号或密码未配置")
+        return False
+    
     # 切换到登录iframe
     try:
         # 等待页面加载
@@ -147,14 +185,14 @@ def login_with_account(driver, wait, cookies_file):
         # 输入账号
         username_field = wait.until(EC.presence_of_element_located((By.ID, "login")))
         username_field.clear()
-        for char in ACCOUNT_CONFIG["USERNAME"]:
+        for char in username:
             username_field.send_keys(char)
             time.sleep(0.1)
         
         # 输入密码
         password_field = wait.until(EC.presence_of_element_located((By.ID, "password")))
         password_field.clear()
-        for char in ACCOUNT_CONFIG["PASSWORD"]:
+        for char in password:
             password_field.send_keys(char)
             time.sleep(0.1)
         
@@ -177,7 +215,7 @@ def login_with_account(driver, wait, cookies_file):
         """)
         
         if needs_phone_verification:
-            print("检测到需要手机验证码验证")
+            logger.info("检测到需要手机验证码验证")
             handle_phone_verification(driver)
         
         # 返回主框架
@@ -211,17 +249,17 @@ def login_with_account(driver, wait, cookies_file):
             pass
         
         if login_success:
-            print("登录成功")
+            logger.info("登录成功")
             # 添加额外的等待，确保所有会话数据都已保存
             time.sleep(2)
             # 保存cookies
             save_cookies(driver, cookies_file)
             return True
         else:
-            print("登录可能未成功，请检查页面状态")
+            logger.warning("登录可能未成功，请检查页面状态")
             return False
     except Exception as e:
-        print(f"登录过程出现异常: {e}")
+        logger.error(f"登录过程出现异常: {e}")
         return False
 
 
@@ -478,44 +516,80 @@ def handle_phone_verification(driver, timeout=60):
                 return False
             
             # 输入验证码
-            sms_input.clear()
-            sms_input.send_keys(verification_code)
-            logger.info("输入验证码完成")
+            try:
+                # 确保验证码输入框仍然存在
+                sms_input = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='请输入验证码']")))
+                sms_input.clear()
+                # 逐个字符输入，确保每个字符都能被正确输入
+                for char in verification_code:
+                    sms_input.send_keys(char)
+                    time.sleep(0.1)
+                logger.info(f"输入验证码完成: {verification_code}")
+            except Exception as e:
+                logger.error(f"输入验证码失败: {e}")
+                return False
             
             # 点击验证按钮
+            submit_success = False
             try:
-                submit_button = None
+                # 尝试多种方式找到并点击验证按钮
+                # 1. 通过ID查找
                 try:
-                    submit_button = driver.find_element(By.ID, "yodaSubmit")
-                except Exception:
-                    try:
-                        submit_button = driver.find_element(By.XPATH, "//span[contains(text(), '验证')]/..")
-                    except Exception:
-                        try:
-                            # 最后尝试JavaScript点击
-                            is_clicked = driver.execute_script("""
-                            var btn = document.getElementById('yodaSubmit');
-                            if (!btn) {
-                                btn = Array.from(document.querySelectorAll('button')).find(b => 
-                                    b.textContent.includes('验证'));
-                            }
-                            if (btn) {
-                                btn.disabled = false;
-                                btn.click();
-                                return true;
-                            }
-                            return false;
-                            """)
-                            if is_clicked:
-                                logger.info("使用JavaScript点击了验证按钮")
-                        except Exception:
-                            pass
-                
-                if submit_button and submit_button.is_displayed():
+                    submit_button = wait.until(EC.element_to_be_clickable((By.ID, "yodaSubmit")))
                     submit_button.click()
-                    logger.info("点击验证按钮")
+                    logger.info("通过ID找到并点击了验证按钮")
+                    submit_success = True
+                except Exception:
+                    logger.info("通过ID查找验证按钮失败，尝试其他方法")
+                
+                # 2. 通过XPath查找
+                if not submit_success:
+                    try:
+                        submit_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), '验证')]/parent::button")))
+                        submit_button.click()
+                        logger.info("通过XPath找到并点击了验证按钮")
+                        submit_success = True
+                    except Exception:
+                        logger.info("通过XPath查找验证按钮失败，尝试其他方法")
+                
+                # 3. 最后尝试JavaScript点击
+                if not submit_success:
+                    try:
+                        is_clicked = driver.execute_script("""
+                        // 尝试多种选择器找到验证按钮
+                        var btn = document.getElementById('yodaSubmit');
+                        if (!btn) {
+                            btn = document.querySelector('button[id*="submit" i], button[class*="submit" i]');
+                        }
+                        if (!btn) {
+                            btn = Array.from(document.querySelectorAll('button')).find(b => 
+                                b.textContent.includes('验证'));
+                        }
+                        if (btn) {
+                            // 移除可能的禁用状态
+                            btn.disabled = false;
+                            btn.removeAttribute('disabled');
+                            btn.click();
+                            return true;
+                        }
+                        return false;
+                        """)
+                        if is_clicked:
+                            logger.info("使用JavaScript找到并点击了验证按钮")
+                            submit_success = True
+                        else:
+                            logger.warning("JavaScript无法找到验证按钮")
+                    except Exception as js_error:
+                        logger.error(f"JavaScript点击验证按钮时出错: {js_error}")
+                
+                # 检查是否成功点击了验证按钮
+                if not submit_success:
+                    logger.warning("未能找到并点击验证按钮，验证可能失败")
+                    return False
+                
             except Exception as e:
                 logger.error(f"点击验证按钮失败: {e}")
+                return False
             
             # 等待验证结果
             time.sleep(3)
@@ -551,8 +625,26 @@ def handle_phone_verification(driver, timeout=60):
             
             return True
         except (NoSuchElementException, TimeoutException) as e:
-            logger.info(f"无需手机验证码: {e}")
-            return True
+            logger.info(f"尝试找验证码输入框时出错: {e}")
+            # 进一步检查是否真的不需要验证码
+            try:
+                # 检查页面中是否包含需要验证码的标志
+                needs_verification = driver.execute_script("""
+                return document.body.innerText.includes('验证码') || 
+                       document.body.innerHTML.includes('验证码') ||
+                       document.getElementById('yodaVerification') !== null ||
+                       document.getElementById('yodaSmsCodeBtn') !== null;
+                """)
+                
+                if needs_verification:
+                    logger.warning("页面包含验证码相关元素，但找不到验证码输入框，可能需要人工介入")
+                    return False
+                else:
+                    logger.info("确认无需手机验证码")
+                    return True
+            except Exception as check_err:
+                logger.error(f"检查验证码需求时出错: {check_err}")
+                return False
     except Exception as e:
         logger.error(f"处理手机验证码验证失败: {e}")
         return False

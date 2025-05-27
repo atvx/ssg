@@ -106,8 +106,14 @@ def get_all_duowei_data(config, date=None):
                     "avgIncomeAmt": 0
                 })
     
-    # 保存结果到文件
-    with open(config["OUTPUT_FILE"], 'w', encoding='utf-8') as f:
-        json.dump(all_warehouse_sales, f, ensure_ascii=False, indent=2, default=decimal_default)
+    # 保存结果到文件（如果配置允许）
+    save_to_file = config.get("SAVE_TO_FILE", False)
+    if save_to_file and "OUTPUT_FILE" in config:
+        try:
+            with open(config["OUTPUT_FILE"], 'w', encoding='utf-8') as f:
+                json.dump(all_warehouse_sales, f, ensure_ascii=False, indent=2, default=decimal_default)
+            print(f"结果已保存到文件: {config['OUTPUT_FILE']}")
+        except Exception as e:
+            print(f"保存结果到文件时出错: {e}")
     
     return all_warehouse_sales 

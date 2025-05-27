@@ -62,7 +62,8 @@ def fetch_duowei_data(date: Optional[str] = None) -> Dict[str, Any]:
             "BASE_URL": settings.DUOWEI_CONFIG["BASE_URL"],
             "USER_ID": settings.DUOWEI_CONFIG["USER_ID"],
             "DB_NAME": settings.DUOWEI_CONFIG["DB_NAME"],
-            "OUTPUT_FILE": "sales_duowei.json"
+            "OUTPUT_FILE": "sales_duowei.json",
+            "SAVE_TO_FILE": False  # 默认不保存结果到文件
         }
         
         # 验证配置

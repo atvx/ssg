@@ -103,6 +103,7 @@ venv.bak/
 
 # ChromeDriver
 chrome_user_data/
+cookies_meituan.json
 
 # mypy
 .mypy_cache/

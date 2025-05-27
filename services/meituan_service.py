@@ -22,7 +22,8 @@ from services.browser_service import get_browser
 from celery import shared_task
 from sqlalchemy.orm import Session
 from utils.redis_utils import VerificationManager
-from db.database import get_db
+from db.database import get_db, SessionLocal
+from models.user import User
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -34,10 +35,18 @@ REPORT_CENTER_URL = settings.MEITUAN_CONFIG["BUSINESS_OVERVIEW_URL"]
 
 @shared_task(bind=True, max_retries=3)
 def fetch_meituan_data_task(self):
-    """Celery异步任务：获取美团数据"""
+    """Celery任务：获取美团销售数据"""
+    logger.info("开始执行美团数据抓取任务")
     try:
-        db = next(get_db())
-        task_data = fetch_meituan_data(db)
+        # 获取数据库会话
+        db = SessionLocal()
+        
+        # 获取系统管理员用户
+        admin_user = db.query(User).filter(User.is_superuser == True).first()
+        admin_id = admin_user.id if admin_user else None
+        
+        # 获取美团销售数据
+        task_data = fetch_meituan_data(db, user_id=admin_id)
         return task_data
     except Exception as e:
         logger.error(f"获取美团数据失败: {e}")
@@ -47,12 +56,13 @@ def fetch_meituan_data_task(self):
         self.retry(exc=e, countdown=retry_countdown)
 
 
-def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any]:
+def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
     """获取美团销售数据
     
     Args:
         db: 数据库会话
         date: 查询日期（格式为YYYY-MM-DD），为空时默认为当天
+        user_id: 用户ID，用于获取第三方平台账号信息（可选）
         
     Returns:
         Dict[str, Any]: 提取的数据，格式为：
@@ -81,7 +91,7 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
     }
     
     # 增加详细日志，追踪日期参数
-    logger.info(f"======= fetch_meituan_data 被调用，接收到日期参数：'{date}' =======")
+    logger.info(f"======= fetch_meituan_data 被调用，接收到日期参数：'{date}'，用户ID：{user_id} =======")
     
     # 处理日期参数
     today = datetime.now().date().isoformat()
@@ -134,7 +144,10 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
             login_success = login_with_account(
                 driver, 
                 wait,
-                "cookies_meituan.json"
+                "cookies_meituan.json",
+                db=db,
+                user_id=user_id,
+                platform="meituan"
             )
             
             if not login_success:
@@ -211,7 +224,8 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
             api_config = {
                 "API_TIMEOUT": 60,
                 "BUSINESS_SUMMARY_URL": "https://pos.meituan.com/web/api/v2/reports/combine/business-summary-page",
-                "OUTPUT_FILE": "sales_meituan.json"
+                "OUTPUT_FILE": "sales_meituan.json",
+                "SAVE_TO_FILE": False  # 默认不保存结果到文件
             }
             
             def patched_monitor_api_response(driver, url, max_wait_time=None, methods=None, start_time=None, **kwargs):
@@ -240,15 +254,6 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, Any
                 logger.info(f"调用select_date设置日期: {formatted_date}")
                 select_date(driver, formatted_date)
                 time.sleep(2)
-                verify_dates = driver.execute_script(current_date_script)
-                if verify_dates:
-                    logger.info(f"最终UI显示日期 - 开始: {verify_dates['start']}, 结束: {verify_dates['end']}")
-                    formatted_ui_date = formatted_date.replace('-', '/')
-                    if verify_dates['start'] == formatted_ui_date and verify_dates['end'] == formatted_ui_date:
-                        logger.info(f"日期设置最终验证成功: {formatted_ui_date}")
-                    else:
-                        logger.warning(f"日期设置最终验证不匹配，期望: {formatted_ui_date}, 实际: {verify_dates['start']}/{verify_dates['end']}")
-                
             except Exception as e:
                 logger.error(f"设置日期时出错: {e}")
                 logger.error(traceback.format_exc())
@@ -372,13 +377,17 @@ def get_all_meituan_data(db: Session, date: Optional[str] = None) -> Dict[str, A
     Args:
         db: 数据库会话
         date: 查询日期（格式为YYYY-MM-DD），为空时默认为当天
-        
+    
     Returns:
         Dict[str, Any]: 结果信息
     """
     try:
+        # 获取系统管理员用户ID
+        admin_user = db.query(User).filter(User.is_superuser == True).first()
+        admin_id = admin_user.id if admin_user else None
+        
         # 获取基础销售数据
-        sales_data = fetch_meituan_data(db, date)
+        sales_data = fetch_meituan_data(db, date=date, user_id=admin_id)
         
         # 验证是否需要手机验证码
         if not sales_data["success"]:
