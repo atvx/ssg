@@ -1,9 +1,9 @@
+import logging
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 import json
-import logging
 from sqlalchemy import and_, or_, desc, select
 from decimal import Decimal
 
@@ -22,7 +22,6 @@ from schemas.sales import MonthlySalesTargetCreate, MonthlySalesTargetUpdate
 from utils.security import get_password_hash, verify_password
 
 # 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # 用户相关操作
@@ -372,7 +371,8 @@ def update_task(db: Session, task_id: int, task_update):
     """更新任务信息"""
     db_task = get_task(db, task_id)
     if not db_task:
-        raise ValueError(f"Task with id {task_id} not found")
+        logger.warning(f"Task with id {task_id} not found")
+        return None
     
     # 判断task_update是普通字典还是Pydantic模型
     if hasattr(task_update, 'dict'):

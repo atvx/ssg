@@ -33,6 +33,7 @@ class ErrorType(str, Enum):
     RESOURCE_ERROR = "RESOURCE_ERROR"
     DATABASE_ERROR = "DATABASE_ERROR"
     SERVER_ERROR = "SERVER_ERROR"
+    NOT_FOUND = "NOT_FOUND"
 
 
 # 错误详情项

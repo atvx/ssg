@@ -319,14 +319,11 @@ async def get_verification_status(task_id: str):
         try:
             task = VerificationManager.get_verification_task(task_id)
             if not task:
-                return create_error_response(
-                    message="验证任务不存在",
-                    error_type=ErrorType.NOT_FOUND,
-                    code=status.HTTP_404_NOT_FOUND,
-                    details=[{
-                        "field": "task_id",
-                        "message": "验证任务不存在"
-                    }]
+                # 返回符合VerificationResponse模型的响应
+                return VerificationResponse(
+                    task_id=task_id,
+                    status="not_found",
+                    message="验证任务不存在"
                 )
                 
             return VerificationResponse(
@@ -336,25 +333,19 @@ async def get_verification_status(task_id: str):
                 data=task
             )
         except ValueError as e:
-            return create_error_response(
-                message=str(e),
-                error_type=ErrorType.VALIDATION_ERROR,
-                code=status.HTTP_400_BAD_REQUEST,
-                details=[{
-                    "field": "task_id",
-                    "message": str(e)
-                }]
+            # 返回符合VerificationResponse模型的响应
+            return VerificationResponse(
+                task_id=task_id,
+                status="error",
+                message=str(e)
             )
             
     except Exception as e:
-        return create_error_response(
-            message=f"获取验证任务状态失败: {str(e)}",
-            error_type=ErrorType.SERVER_ERROR,
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details=[{
-                "field": "system",
-                "message": str(e)
-            }]
+        # 返回符合VerificationResponse模型的响应
+        return VerificationResponse(
+            task_id=task_id,
+            status="error",
+            message=f"获取验证任务状态失败: {str(e)}"
         )
 
 @router.post("/verification/{task_id}/submit", response_model=VerificationResponse, summary="提交验证码")
@@ -377,27 +368,21 @@ async def submit_verification_code(
         try:
             task = VerificationManager.get_verification_task(task_id)
             if not task:
-                return create_error_response(
-                    message="验证任务不存在",
-                    error_type=ErrorType.NOT_FOUND,
-                    code=status.HTTP_404_NOT_FOUND,
-                    details=[{
-                        "field": "task_id",
-                        "message": "验证任务不存在"
-                    }]
+                # 返回符合VerificationResponse模型的响应
+                return VerificationResponse(
+                    task_id=task_id,
+                    status="not_found",
+                    message="验证任务不存在"
                 )
                 
             # 提交验证码
             success = VerificationManager.submit_verification_code(task_id, request.code)
             if not success:
-                return create_error_response(
-                    message="验证码提交失败",
-                    error_type=ErrorType.VALIDATION_ERROR,
-                    code=status.HTTP_400_BAD_REQUEST,
-                    details=[{
-                        "field": "code",
-                        "message": "验证码提交失败，可能验证码无效或已过期"
-                    }]
+                # 返回符合VerificationResponse模型的响应
+                return VerificationResponse(
+                    task_id=task_id,
+                    status="failed",
+                    message="验证码提交失败，可能验证码无效或已过期"
                 )
             
             # 通过Redis发布验证码提交通知
@@ -414,23 +399,17 @@ async def submit_verification_code(
                 message="Successfully submitted verification code"
             )
         except ValueError as e:
-            return create_error_response(
-                message=str(e),
-                error_type=ErrorType.VALIDATION_ERROR,
-                code=status.HTTP_400_BAD_REQUEST,
-                details=[{
-                    "field": "code",
-                    "message": str(e)
-                }]
+            # 返回符合VerificationResponse模型的响应
+            return VerificationResponse(
+                task_id=task_id,
+                status="error",
+                message=str(e)
             )
             
     except Exception as e:
-        return create_error_response(
-            message=f"验证码提交失败: {str(e)}",
-            error_type=ErrorType.SERVER_ERROR,
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details=[{
-                "field": "system",
-                "message": str(e)
-            }]
+        # 返回符合VerificationResponse模型的响应
+        return VerificationResponse(
+            task_id=task_id,
+            status="error",
+            message=f"验证码提交失败: {str(e)}"
         )

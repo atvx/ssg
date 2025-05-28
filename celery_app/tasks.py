@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from celery import shared_task
 from celery_app.celery import celery_app
 from db.database import SessionLocal, get_db
-from db.crud import update_task, create_or_update_sales_record
+from db.crud import update_task, create_or_update_sales_record, get_task
 from models.task import Task
 from schemas.sales import SalesRecordCreate
 from schemas.task import TaskUpdate
@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 def update_task_status(task_id: int, status: str, progress: int, result=None, error=None):
     db = SessionLocal()
     try:
+        # 先检查任务是否存在
+        task = get_task(db, task_id)
+        if not task:
+            logger.warning(f"尝试更新不存在的任务: Task with id {task_id} not found")
+            return False
+            
         # 使用TaskUpdate模型而不是普通字典
         task_update_data = {
             "status": status,
@@ -36,6 +42,10 @@ def update_task_status(task_id: int, status: str, progress: int, result=None, er
         task_update = TaskUpdate(**task_update_data)
         
         update_task(db, task_id, task_update)
+        return True
+    except Exception as e:
+        logger.error(f"更新任务状态失败: {str(e)}")
+        return False
     finally:
         db.close()
 
@@ -68,14 +78,22 @@ def fetch_meituan_task(self, task_id: int, date: str = None):
     from datetime import datetime
     
     try:
-        update_task_status(task_id, "running", 10)
+        # 检查任务是否存在，如果不存在则提前返回
+        if not update_task_status(task_id, "running", 10):
+            logger.error(f"任务不存在: Task with id {task_id} not found")
+            return {"status": "error", "error": f"Task with id {task_id} not found"}
         
         # 使用Meituan服务获取数据
         from services.meituan_service import fetch_meituan_data
         db = next(get_db())
         
+        # 获取任务对象，以便获取用户ID
+        from db.crud import get_task
+        task = get_task(db, task_id)
+        user_id = task.user_id if task else None
+        
         # 获取美团数据
-        data = fetch_meituan_data(db, date)
+        data = fetch_meituan_data(db, date, user_id)
         update_task_status(task_id, "running", 50)
         
         # 检查是否获取成功
@@ -105,7 +123,10 @@ def fetch_duowei_task(self, task_id: int, date: str = None):
     from datetime import datetime
     
     try:
-        update_task_status(task_id, "running", 10)
+        # 检查任务是否存在，如果不存在则提前返回
+        if not update_task_status(task_id, "running", 10):
+            logger.error(f"任务不存在: Task with id {task_id} not found")
+            return {"status": "error", "error": f"Task with id {task_id} not found"}
         
         # 获取数据
         from services.duowei_service import fetch_duowei_data
@@ -139,12 +160,20 @@ def fetch_all_data_task(self, task_id: int, date: str = None):
     from datetime import datetime
     
     try:
-        update_task_status(task_id, "running", 10)
+        # 检查任务是否存在，如果不存在则提前返回
+        if not update_task_status(task_id, "running", 10):
+            logger.error(f"任务不存在: Task with id {task_id} not found")
+            return {"status": "error", "error": f"Task with id {task_id} not found"}
+        
+        # 获取任务对象，以便获取用户ID
+        from db.crud import get_task
+        db = next(get_db())
+        task = get_task(db, task_id)
+        user_id = task.user_id if task else None
         
         # 获取美团数据
         from services.meituan_service import fetch_meituan_data
-        db = next(get_db())
-        meituan_result = fetch_meituan_data(db, date)
+        meituan_result = fetch_meituan_data(db, date, user_id)
         update_task_status(task_id, "running", 40)
         
         # 获取多维数据

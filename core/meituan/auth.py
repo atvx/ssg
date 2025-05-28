@@ -424,30 +424,51 @@ def handle_phone_verification(driver, timeout=60):
             # 获取手机号
             phone_number = ""
             try:
-                phone_elem = driver.find_element(By.XPATH, "//div[contains(@class, 'mobile')]")
-                phone_number = phone_elem.text
-            except Exception:
+                # 使用精确路径找到手机号
                 try:
-                    phone_elem = driver.find_element(By.XPATH, "//span[contains(text(), '发送验证码')]/../preceding-sibling::div")
-                    phone_number = phone_elem.text
+                    phone_elem = driver.find_element(By.XPATH, "//div[@id='popup-context']//span[contains(@class, '_sms__mobile')]")
+                    if phone_elem:
+                        phone_number = phone_elem.text
+                        logger.info(f"找到手机号: {phone_number}")
                 except Exception:
-                    # 最后尝试JavaScript获取
+                    # 如果XPath失败，使用JavaScript提取
                     phone_number = driver.execute_script("""
-                    var phoneElem = document.querySelector('.verify-phone');
-                    if (phoneElem) {
-                        return phoneElem.textContent.replace(/[^0-9]/g, '');
+                    // 尝试精确定位手机号元素
+                    var mobileContainer = document.querySelector('div[class*="_sms__wrapper"] span[class*="_sms__mobile"]');
+                    if (mobileContainer) {
+                        return mobileContainer.textContent.trim();
                     }
-                    return '';
+                    
+                    // 查找整个弹窗内容
+                    var popupContext = document.getElementById('popup-context');
+                    if (popupContext) {
+                        var content = popupContext.textContent;
+                        var matches = content.match(/\\d+\\*+\\d+/);
+                        if (matches) {
+                            return matches[0];
+                        }
+                    }
+                    return "";
                     """)
+                    if phone_number:
+                        logger.info(f"通过JavaScript找到手机号: {phone_number}")
+                
+                # 如果前两种方法都失败，从页面源代码提取
+                if not phone_number:
+                    page_source = driver.page_source
+                    import re
+                    phone_matches = re.findall(r'\d{2,3}\*{3,}\d{2,3}', page_source)
+                    if phone_matches:
+                        phone_number = phone_matches[0]
+            except Exception as e:
+                logger.warning(f"获取手机号时出错: {e}")
             
             # 如果没有获取到手机号，使用备用值
             if not phone_number:
                 phone_number = "未知手机号"
+                logger.warning("未能获取到手机号，使用默认值")
             else:
-                # 清理手机号中的非数字字符
-                phone_number = ''.join(filter(str.isdigit, phone_number))
-                
-            logger.info(f"获取到手机号: {phone_number}")
+                phone_number = phone_number.strip()
             
             # 创建验证任务
             task_id = VerificationManager.create_verification_task({
@@ -517,78 +538,135 @@ def handle_phone_verification(driver, timeout=60):
             
             # 输入验证码
             try:
-                # 确保验证码输入框仍然存在
-                sms_input = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='请输入验证码']")))
-                sms_input.clear()
-                # 逐个字符输入，确保每个字符都能被正确输入
-                for char in verification_code:
-                    sms_input.send_keys(char)
-                    time.sleep(0.1)
-                logger.info(f"输入验证码完成: {verification_code}")
-            except Exception as e:
-                logger.error(f"输入验证码失败: {e}")
-                return False
-            
-            # 点击验证按钮
-            submit_success = False
-            try:
-                # 尝试多种方式找到并点击验证按钮
-                # 1. 通过ID查找
-                try:
-                    submit_button = wait.until(EC.element_to_be_clickable((By.ID, "yodaSubmit")))
-                    submit_button.click()
-                    logger.info("通过ID找到并点击了验证按钮")
+                # 使用纯JavaScript方法处理验证码输入和按钮点击
+                result = driver.execute_script(f"""
+                try {{
+                    // 找到验证码输入框
+                    var input = document.getElementById('yodaVerification');
+                    if (!input) {{
+                        // 如果找不到指定ID，尝试使用CSS选择器
+                        input = document.querySelector('input[placeholder="请输入验证码"]');
+                    }}
+                    
+                    if (!input) {{
+                        return {{"success": false, "error": "找不到验证码输入框"}};
+                    }}
+                    
+                    // 设置验证码值
+                    input.value = '{verification_code}';
+                    
+                    // 触发必要的事件
+                    ['input', 'change'].forEach(function(eventType) {{
+                        var event = new Event(eventType, {{ bubbles: true }});
+                        input.dispatchEvent(event);
+                    }});
+                    
+                    // 找到验证按钮
+                    var btn = document.getElementById('yodaSubmit');
+                    if (!btn) {{
+                        // 备用方法找按钮
+                        btn = document.querySelector('button[type="button"][id="yodaSubmit"]');
+                    }}
+                    
+                    if (!btn) {{
+                        return {{"success": false, "error": "找不到验证按钮"}};
+                    }}
+                    
+                    // 移除禁用状态
+                    btn.disabled = false;
+                    btn.removeAttribute('disabled');
+                    
+                    // 移除包含banAutoSubmit的所有类
+                    if (btn.className) {{
+                        btn.className = btn.className.split(' ').filter(function(cls) {{
+                            return !cls.includes('banAutoSubmit');
+                        }}).join(' ');
+                    }}
+                    
+                    // 等待很短的时间确保事件处理完成
+                    setTimeout(function() {{
+                        btn.click();
+                    }}, 100);
+                    
+                    return {{"success": true, "message": "验证码已输入并点击验证按钮"}};
+                }} catch (e) {{
+                    return {{"success": false, "error": e.toString()}};
+                }}
+                """)
+                
+                if result and result.get('success'):
+                    logger.info(f"JavaScript成功处理验证码: {verification_code}")
+                    logger.info(f"结果: {result.get('message')}")
+                    # 给页面一些时间处理验证
+                    time.sleep(2)
                     submit_success = True
-                except Exception:
-                    logger.info("通过ID查找验证按钮失败，尝试其他方法")
-                
-                # 2. 通过XPath查找
-                if not submit_success:
-                    try:
-                        submit_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), '验证')]/parent::button")))
-                        submit_button.click()
-                        logger.info("通过XPath找到并点击了验证按钮")
-                        submit_success = True
-                    except Exception:
-                        logger.info("通过XPath查找验证按钮失败，尝试其他方法")
-                
-                # 3. 最后尝试JavaScript点击
-                if not submit_success:
-                    try:
-                        is_clicked = driver.execute_script("""
-                        // 尝试多种选择器找到验证按钮
-                        var btn = document.getElementById('yodaSubmit');
-                        if (!btn) {
-                            btn = document.querySelector('button[id*="submit" i], button[class*="submit" i]');
-                        }
-                        if (!btn) {
-                            btn = Array.from(document.querySelectorAll('button')).find(b => 
-                                b.textContent.includes('验证'));
-                        }
-                        if (btn) {
-                            // 移除可能的禁用状态
-                            btn.disabled = false;
-                            btn.removeAttribute('disabled');
+                else:
+                    error_msg = result.get('error') if result else "未知错误"
+                    logger.warning(f"JavaScript处理验证码失败: {error_msg}")
+                    
+                    # 尝试使用更简单的JavaScript方法
+                    simple_result = driver.execute_script(f"""
+                    try {{
+                        // 尝试不同的选择器定位验证码输入框
+                        var selectors = [
+                            '#yodaVerification',
+                            'input[placeholder="请输入验证码"]',
+                            'input[class*="smsCodeInput"]',
+                            'input[type="number"]'
+                        ];
+                        
+                        var input = null;
+                        for (var i = 0; i < selectors.length; i++) {{
+                            input = document.querySelector(selectors[i]);
+                            if (input) break;
+                        }}
+                        
+                        if (!input) return false;
+                        
+                        // 设置值
+                        input.value = '{verification_code}';
+                        
+                        // 查找按钮
+                        var btnSelectors = [
+                            '#yodaSubmit',
+                            'button[id="yodaSubmit"]',
+                            '.btnWrapper button',
+                            'button[type="button"]:not([id="yodaSmsCodeBtn"])'
+                        ];
+                        
+                        var btn = null;
+                        for (var j = 0; j < btnSelectors.length; j++) {{
+                            btn = document.querySelector(btnSelectors[j]);
+                            if (btn) break;
+                        }}
+                        
+                        if (!btn) return false;
+                        
+                        // 启用按钮
+                        btn.disabled = false;
+                        btn.removeAttribute('disabled');
+                        
+                        // 点击按钮
+                        setTimeout(function() {{
                             btn.click();
-                            return true;
-                        }
+                        }}, 200);
+                        
+                        return true;
+                    }} catch(e) {{
+                        console.error(e);
                         return false;
-                        """)
-                        if is_clicked:
-                            logger.info("使用JavaScript找到并点击了验证按钮")
-                            submit_success = True
-                        else:
-                            logger.warning("JavaScript无法找到验证按钮")
-                    except Exception as js_error:
-                        logger.error(f"JavaScript点击验证按钮时出错: {js_error}")
-                
-                # 检查是否成功点击了验证按钮
-                if not submit_success:
-                    logger.warning("未能找到并点击验证按钮，验证可能失败")
-                    return False
-                
+                    }}
+                    """)
+                    
+                    if simple_result:
+                        logger.info("备用JavaScript方法成功处理验证码")
+                        time.sleep(2)
+                        submit_success = True
+                    else:
+                        logger.error("所有JavaScript方法都失败，无法处理验证码")
+                        return False
             except Exception as e:
-                logger.error(f"点击验证按钮失败: {e}")
+                logger.error(f"处理验证码过程出错: {e}", exc_info=True)
                 return False
             
             # 等待验证结果
