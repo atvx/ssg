@@ -1,12 +1,12 @@
-# 使用较新的稳定版 Python (例如 Python 3.13，基于 Debian Bookworm slim)
-FROM python:3.13-slim-bookworm
+# 使用适配ARM架构的Python基础镜像
+FROM python:3.11-slim-bullseye
 
 WORKDIR /app
 
 # 设置 DEBIAN_FRONTEND 为非交互模式，避免构建过程中的用户提示
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 安装必要的工具及 Chrome 运行依赖
+# 安装必要的工具及依赖
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y \
     jq \
     unzip \
     procps \
+    # 添加SSL证书相关包
+    openssl \
+    apt-transport-https \
     # Chrome 运行所需的核心依赖库
     fonts-liberation \
     libasound2 \
@@ -47,57 +50,40 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     lsb-release \
     xdg-utils \
+    gosu \
     --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 添加 Google Chrome 官方软件源
-RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome-keyring.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list
+# 更新CA证书
+RUN update-ca-certificates
 
-# 安装最新稳定版的 Google Chrome
+# 为ARM架构安装Chromium而不是Chrome（ARM架构更容易支持Chromium）
 RUN apt-get update && apt-get install -y \
-    google-chrome-stable \
+    chromium \
+    chromium-driver \
     --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装与已安装 Chrome 版本对应的 ChromeDriver
-RUN CHROME_VERSION_NUMBER=137.0.7151.55 \
-    && echo "已安装的 Chrome 浏览器版本: ${CHROME_VERSION_NUMBER}" \
-    && DOWNLOAD_URL="https://storage.googleapis.com/chrome-for-testing-public/137.0.7151.55/linux64/chromedriver-linux64.zip" \
-    && echo "找到 ChromeDriver 下载链接: ${DOWNLOAD_URL}" \
-    # 增加更多的日志来帮助调试
-    && echo "开始下载 ChromeDriver..." \
-    && curl -sSL "${DOWNLOAD_URL}" -o /tmp/chromedriver.zip \
-    && if [ ! -f /tmp/chromedriver.zip ]; then \
-        echo "下载失败！"; \
-        exit 1; \
-    fi \
-    && echo "ChromeDriver 下载成功，解压中..." \
-    # 解压到临时目录
-    && unzip -q /tmp/chromedriver.zip -d /tmp/ \
-    && echo "解压后的文件内容：" \
-    && ls -l /tmp/ \
-    # 移动 chromedriver 可执行文件
-    && mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/ \
-    && rm -rf /tmp/chromedriver-linux64 \
-    && rm /tmp/chromedriver.zip \
-    && chmod +x /usr/local/bin/chromedriver \
-    && echo "已安装的 ChromeDriver 版本: $(chromedriver --version)" # 验证安装
+# 创建指向chromium的软链接，以便与期望chrome的代码兼容
+RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
+    && ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /app/
 
-# 创建临时目录和用户数据目录
+# 预先创建所有需要的目录并设置权限
 RUN mkdir -p /app/chrome_user_data \
     && mkdir -p /app/tmp \
     && mkdir -p /tmp/chrome_tmp \
+    && mkdir -p /tmp/chrome_data \
     && chmod -R 777 /app/chrome_user_data \
     && chmod -R 777 /app/tmp \
-    && chmod -R 777 /tmp/chrome_tmp
+    && chmod -R 777 /tmp/chrome_tmp \
+    && chmod -R 777 /tmp/chrome_data
 
 # 环境变量设置
 ENV PYTHONPATH=/app
@@ -108,19 +94,27 @@ ENV CHROME_DISABLE_GPU=true
 ENV CHROME_NO_SANDBOX=true
 ENV CHROME_DISABLE_DEV_SHM=true
 ENV TMP=/tmp/chrome_tmp
+# 添加Chromium特定环境变量
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROME_PATH=/usr/lib/chromium
+# 添加SSL相关环境变量
+ENV OPENSSL_CONF=/etc/ssl/openssl.cnf
 
 # 添加入口脚本
 COPY entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# 创建非root用户并设置权限
-RUN useradd --system --create-home --no-log-init --shell /bin/bash appuser \
-    && chown -R appuser:appuser /app \
+# 创建非root用户
+RUN useradd --system --create-home --no-log-init --shell /bin/bash appuser
+
+# 确保所有目录权限正确设置
+RUN chown -R appuser:appuser /app \
     && chown -R appuser:appuser /tmp/chrome_tmp \
-    && chown -R appuser:appuser /usr/local/bin/entrypoint.sh \
+    && chown -R appuser:appuser /tmp/chrome_data \
     && chown -R appuser:appuser /app/chrome_user_data
 
-USER appuser
+# 保持root用户运行entrypoint.sh，脚本内部会切换到appuser
+# 不要在这里切换到appuser用户
 
 EXPOSE 8000
 
