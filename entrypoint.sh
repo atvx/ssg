@@ -8,6 +8,12 @@ echo "内存使用情况:"
 free -h
 echo "磁盘使用情况:"
 df -h
+echo "当前用户:"
+whoami
+echo "当前目录:"
+pwd
+echo "目录权限:"
+ls -la /app
 
 # 确保Chrome进程在启动时是干净的
 echo "清理可能存在的Chrome进程..."
@@ -21,8 +27,25 @@ sleep 1
 # 清理所有Chrome用户数据目录
 echo "清理Chrome用户数据目录..."
 find /app -name "chrome_user_data*" -type d -exec rm -rf {} \; 2>/dev/null || true
-mkdir -p /app/chrome_user_data
-chmod -R 777 /app/chrome_user_data
+
+# 创建并确保权限
+echo "创建并确保目录权限..."
+if [ ! -d /app/chrome_user_data ]; then
+    echo "Chrome用户数据目录不存在，尝试创建..."
+    mkdir -p /app/chrome_user_data || (sudo mkdir -p /app/chrome_user_data && sudo chown -R $(whoami):$(whoami) /app/chrome_user_data)
+    if [ ! -d /app/chrome_user_data ]; then
+        echo "警告: 无法创建 /app/chrome_user_data 目录，将使用/tmp目录代替"
+        export CHROME_USER_DATA_DIR="/tmp/chrome_user_data"
+        mkdir -p $CHROME_USER_DATA_DIR
+        chmod -R 777 $CHROME_USER_DATA_DIR
+    else
+        echo "成功创建目录: /app/chrome_user_data"
+        chmod -R 777 /app/chrome_user_data || true
+    fi
+else
+    echo "目录已存在: /app/chrome_user_data"
+    chmod -R 777 /app/chrome_user_data || true
+fi
 
 # 清理临时目录
 echo "清理临时目录..."
@@ -48,6 +71,14 @@ if [ -f /usr/local/bin/chromedriver ]; then
     echo "测试chromedriver..."
     chmod +x /usr/local/bin/chromedriver
     /usr/local/bin/chromedriver --version || echo "chromedriver执行失败"
+fi
+
+# 验证目录和文件权限
+echo "验证目录权限..."
+touch /tmp/test_file && echo "可以写入/tmp" || echo "无法写入/tmp"
+touch /app/test_file && echo "可以写入/app" || echo "无法写入/app"
+if [ -d /app/chrome_user_data ]; then
+    touch /app/chrome_user_data/test_file && echo "可以写入/app/chrome_user_data" || echo "无法写入/app/chrome_user_data"
 fi
 
 # 启动指定的命令

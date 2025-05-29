@@ -94,9 +94,9 @@ COPY . /app/
 # 创建临时目录和用户数据目录
 RUN mkdir -p /app/chrome_user_data \
     && mkdir -p /app/tmp \
+    && mkdir -p /tmp/chrome_tmp \
     && chmod -R 777 /app/chrome_user_data \
     && chmod -R 777 /app/tmp \
-    && mkdir -p /tmp/chrome_tmp \
     && chmod -R 777 /tmp/chrome_tmp
 
 # 环境变量设置
@@ -109,13 +109,16 @@ ENV CHROME_NO_SANDBOX=true
 ENV CHROME_DISABLE_DEV_SHM=true
 ENV TMP=/tmp/chrome_tmp
 
-# 创建非root用户并设置权限
-RUN useradd --system --create-home --no-log-init --shell /bin/bash appuser \
-    && chown -R appuser:appuser /app
-
 # 添加入口脚本
 COPY entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# 创建非root用户并设置权限
+RUN useradd --system --create-home --no-log-init --shell /bin/bash appuser \
+    && chown -R appuser:appuser /app \
+    && chown -R appuser:appuser /tmp/chrome_tmp \
+    && chown -R appuser:appuser /usr/local/bin/entrypoint.sh \
+    && chown -R appuser:appuser /app/chrome_user_data
 
 USER appuser
 

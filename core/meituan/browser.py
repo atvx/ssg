@@ -77,9 +77,22 @@ def init_chrome_driver(config, force_new_session=False):
     use_user_data_dir = not force_new_session
     if use_user_data_dir:
         try:
-            # 检查默认用户数据目录是否存在
-            base_user_data_dir = os.path.abspath(config.get("USER_DATA_DIR", settings.CHROME_USER_DATA_DIR))
+            # 检查环境变量是否有自定义用户数据目录
+            env_user_data_dir = os.environ.get('CHROME_USER_DATA_DIR')
+            if env_user_data_dir:
+                print(f"从环境变量获取用户数据目录: {env_user_data_dir}")
+                base_user_data_dir = os.path.abspath(env_user_data_dir)
+            else:
+                # 检查默认用户数据目录是否存在
+                base_user_data_dir = os.path.abspath(config.get("USER_DATA_DIR", settings.CHROME_USER_DATA_DIR))
+                print(f"使用配置的用户数据目录: {base_user_data_dir}")
             
+            # 验证父目录是否可写
+            parent_dir = os.path.dirname(base_user_data_dir)
+            if not os.access(parent_dir, os.W_OK):
+                print(f"警告: 父目录 {parent_dir} 不可写，尝试使用/tmp目录")
+                base_user_data_dir = "/tmp/chrome_user_data"
+                
             # 为每个容器/进程创建唯一的用户数据目录
             hostname = socket.gethostname()
             random_suffix = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=6))
@@ -88,20 +101,58 @@ def init_chrome_driver(config, force_new_session=False):
             # 先尝试删除目录（如果存在），然后创建新目录
             if os.path.exists(user_data_dir):
                 import shutil
-                shutil.rmtree(user_data_dir, ignore_errors=True)
+                try:
+                    shutil.rmtree(user_data_dir, ignore_errors=True)
+                    print(f"已删除现有目录: {user_data_dir}")
+                except Exception as del_err:
+                    print(f"删除目录时出错: {del_err}")
                 
             try:
+                print(f"尝试创建目录: {user_data_dir}")
+                # 确保父目录存在
+                parent_dir = os.path.dirname(user_data_dir)
+                if not os.path.exists(parent_dir):
+                    os.makedirs(parent_dir, exist_ok=True)
+                    
+                # 创建用户数据目录
                 os.makedirs(user_data_dir, exist_ok=True)
                 os.chmod(user_data_dir, 0o777)  # 设置777权限
-                print(f"创建用户数据目录: {user_data_dir}")
+                print(f"成功创建用户数据目录: {user_data_dir}")
+                
+                # 验证目录确实可写
+                test_file = os.path.join(user_data_dir, "test_write.txt")
+                try:
+                    with open(test_file, 'w') as f:
+                        f.write("test")
+                    os.remove(test_file)
+                    print(f"验证目录 {user_data_dir} 可写: 成功")
+                except Exception as write_err:
+                    print(f"警告: 目录 {user_data_dir} 不可写: {write_err}")
+                    print("将使用临时目录...")
+                    user_data_dir = os.path.join("/tmp", f"chrome_data_{random_suffix}")
+                    os.makedirs(user_data_dir, exist_ok=True)
+                    os.chmod(user_data_dir, 0o777)
             except Exception as mkdir_err:
                 print(f"创建目录时出错: {mkdir_err}")
+                print("将使用临时目录...")
+                user_data_dir = os.path.join("/tmp", f"chrome_data_{random_suffix}")
+                os.makedirs(user_data_dir, exist_ok=True)
+                os.chmod(user_data_dir, 0o777)
                 
             # 使用唯一目录
             chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
         except Exception as e:
             print(f"设置用户数据目录时出错: {e}，将使用临时用户配置文件")
             use_user_data_dir = False
+            # 使用临时目录作为后备方案
+            try:
+                temp_dir = os.path.join("/tmp", f"chrome_data_{random.randint(1000, 9999)}")
+                os.makedirs(temp_dir, exist_ok=True)
+                os.chmod(temp_dir, 0o777)
+                chrome_options.add_argument(f"--user-data-dir={temp_dir}")
+                print(f"使用临时目录: {temp_dir}")
+            except Exception as tmp_err:
+                print(f"创建临时目录也失败: {tmp_err}，将使用Chrome默认配置")
     else:
         print("使用新会话模式，不加载用户数据目录")
     
