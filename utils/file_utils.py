@@ -20,12 +20,37 @@ def kill_chrome_processes():
             subprocess.run("pkill -f 'Google Chrome'", shell=True, capture_output=True)
             subprocess.run("pkill -f 'chromedriver'", shell=True, capture_output=True)
         else:
-            # Linux及其他系统
+            # Linux及其他系统 - 使用更强力的方法
+            # 找到所有Chrome和ChromeDriver进程
             subprocess.run("pkill -f chrome", shell=True, capture_output=True)
             subprocess.run("pkill -f chromedriver", shell=True, capture_output=True)
             
+            # 清理僵尸进程和后台进程
+            subprocess.run("pkill -9 -f chrome", shell=True, capture_output=True)
+            subprocess.run("pkill -9 -f chromedriver", shell=True, capture_output=True)
+            
+            # 清理可能的Chrome相关进程
+            try:
+                # 查找可能的Chrome或Chromedriver相关进程并强制终止
+                ps_output = subprocess.check_output("ps -ef | grep -i chrom | grep -v grep", shell=True, text=True)
+                lines = ps_output.strip().split('\n')
+                
+                for line in lines:
+                    if line.strip():
+                        parts = line.split()
+                        if len(parts) > 1:
+                            pid = parts[1]
+                            try:
+                                subprocess.run(f"kill -9 {pid}", shell=True, capture_output=True)
+                                print(f"已强制终止进程 PID: {pid}")
+                            except:
+                                pass
+            except subprocess.CalledProcessError:
+                # 没有找到匹配的进程，属于正常情况
+                pass
+            
         # 等待进程终止
-        time.sleep(1)
+        time.sleep(2)
         return True
     except Exception as e:
         print(f"终止Chrome进程失败: {e}")

@@ -3,6 +3,8 @@ from selenium.webdriver.chrome.options import Options
 from seleniumwire import webdriver as wire_webdriver
 import os
 import time
+import socket
+import random
 
 from config.settings import settings
 from utils.file_utils import kill_chrome_processes
@@ -31,15 +33,21 @@ def init_chrome_driver(config, force_new_session=False):
     if use_user_data_dir:
         try:
             # 检查默认用户数据目录是否存在
-            user_data_dir = os.path.abspath(config.get("USER_DATA_DIR", settings.CHROME_USER_DATA_DIR))
+            base_user_data_dir = os.path.abspath(config.get("USER_DATA_DIR", settings.CHROME_USER_DATA_DIR))
+            
+            # 为每个容器/进程创建唯一的用户数据目录
+            hostname = socket.gethostname()
+            random_suffix = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=6))
+            user_data_dir = f"{base_user_data_dir}_{hostname}_{random_suffix}"
+            
             if not os.path.exists(user_data_dir):
                 os.makedirs(user_data_dir, exist_ok=True)
                 print(f"创建用户数据目录: {user_data_dir}")
             
-            # 使用固定目录
+            # 使用唯一目录
             chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
         except Exception as e:
-            print(f"设置用户数据目录时出错，将使用临时用户配置文件")
+            print(f"设置用户数据目录时出错: {e}，将使用临时用户配置文件")
             use_user_data_dir = False
     else:
         print("使用新会话模式，不加载用户数据目录")
@@ -64,7 +72,7 @@ def init_chrome_driver(config, force_new_session=False):
             }
             
             # 设置请求过滤范围
-            scopes = config.get("MONITOR_SCOPES", ['.*pos\.meituan\.com.*'])
+            scopes = config.get("MONITOR_SCOPES", ['.*pos\\.meituan\\.com.*'])
             
             # 创建driver
             driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)
@@ -125,7 +133,7 @@ def init_chrome_driver(config, force_new_session=False):
                     }
                     
                     # 设置请求过滤范围
-                    scopes = config.get("MONITOR_SCOPES", ['.*pos\.meituan\.com.*'])
+                    scopes = config.get("MONITOR_SCOPES", ['.*pos\\.meituan\\.com.*'])
                     
                     # 创建driver
                     driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)

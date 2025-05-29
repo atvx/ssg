@@ -110,8 +110,14 @@ ENV TMP=/app/tmp
 # 创建非root用户并设置权限
 RUN useradd --system --create-home --no-log-init --shell /bin/bash appuser \
     && chown -R appuser:appuser /app
+
+# 添加入口脚本
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 USER appuser
 
 EXPOSE 8000
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

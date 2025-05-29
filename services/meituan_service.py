@@ -126,7 +126,7 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
             "USER_DATA_DIR": settings.CHROME_USER_DATA_DIR,
             "HEADLESS": False,
             "MONITOR_API_RESPONSE": True,
-            "MONITOR_SCOPES": [".*pos\.meituan\.com.*"]  # 匹配所有美团POS域名下的请求
+            "MONITOR_SCOPES": [".*pos\\.meituan\\.com.*"]  # 匹配所有美团POS域名下的请求
         }
         
         # 使用配置字典初始化浏览器
