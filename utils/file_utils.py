@@ -20,37 +20,114 @@ def kill_chrome_processes():
             subprocess.run("pkill -f 'Google Chrome'", shell=True, capture_output=True)
             subprocess.run("pkill -f 'chromedriver'", shell=True, capture_output=True)
         else:
-            # Linux及其他系统 - 使用更强力的方法
-            # 找到所有Chrome和ChromeDriver进程
-            subprocess.run("pkill -f chrome", shell=True, capture_output=True)
-            subprocess.run("pkill -f chromedriver", shell=True, capture_output=True)
+            # Linux及其他系统 - 使用更全面的方法
+            print("在Linux环境中清理Chrome进程...")
             
-            # 清理僵尸进程和后台进程
-            subprocess.run("pkill -9 -f chrome", shell=True, capture_output=True)
-            subprocess.run("pkill -9 -f chromedriver", shell=True, capture_output=True)
-            
-            # 清理可能的Chrome相关进程
+            # 使用多种方法检测和清理Chrome相关进程
             try:
-                # 查找可能的Chrome或Chromedriver相关进程并强制终止
-                ps_output = subprocess.check_output("ps -ef | grep -i chrom | grep -v grep", shell=True, text=True)
-                lines = ps_output.strip().split('\n')
+                # 使用ps命令查找Chrome相关进程
+                try:
+                    ps_cmd = "ps -ef | grep -i 'chrom' | grep -v grep"
+                    print(f"执行命令: {ps_cmd}")
+                    ps_output = subprocess.check_output(ps_cmd, shell=True, text=True)
+                    print(f"找到以下Chrome相关进程:\n{ps_output}")
+                except subprocess.CalledProcessError:
+                    print("未找到Chrome相关进程")
                 
-                for line in lines:
-                    if line.strip():
-                        parts = line.split()
-                        if len(parts) > 1:
-                            pid = parts[1]
-                            try:
-                                subprocess.run(f"kill -9 {pid}", shell=True, capture_output=True)
-                                print(f"已强制终止进程 PID: {pid}")
-                            except:
-                                pass
-            except subprocess.CalledProcessError:
-                # 没有找到匹配的进程，属于正常情况
-                pass
+                # 1. 先使用pkill尝试正常终止进程
+                print("使用pkill终止进程...")
+                subprocess.run("pkill -f chrome", shell=True, capture_output=True)
+                subprocess.run("pkill -f chromedriver", shell=True, capture_output=True)
+                
+                # 2. 等待短暂时间
+                time.sleep(1)
+                
+                # 3. 强制终止顽固进程
+                print("强制终止顽固进程...")
+                subprocess.run("pkill -9 -f chrome", shell=True, capture_output=True)
+                subprocess.run("pkill -9 -f chromedriver", shell=True, capture_output=True)
+                
+                # 4. 使用killall命令作为备选方案
+                print("使用killall命令...")
+                subprocess.run("killall -9 chrome", shell=True, capture_output=True, stderr=subprocess.DEVNULL)
+                subprocess.run("killall -9 chromedriver", shell=True, capture_output=True, stderr=subprocess.DEVNULL)
+                
+                # 5. 清理进程组
+                print("清理进程组...")
+                subprocess.run("pkill -9 -g chrome", shell=True, capture_output=True, stderr=subprocess.DEVNULL)
+                
+                # 6. 逐个处理进程
+                try:
+                    # 查找所有Chrome或Chromedriver相关进程
+                    ps_output = subprocess.check_output("ps -ef | grep -i chrom | grep -v grep", shell=True, text=True)
+                    lines = ps_output.strip().split('\n')
+                    
+                    if lines and lines[0]:
+                        print(f"仍然存在 {len(lines)} 个Chrome相关进程，逐个终止...")
+                        for line in lines:
+                            if line.strip():
+                                parts = line.split()
+                                if len(parts) > 1:
+                                    pid = parts[1]
+                                    try:
+                                        subprocess.run(f"kill -9 {pid}", shell=True, capture_output=True)
+                                        print(f"已强制终止进程 PID: {pid}")
+                                    except Exception as e:
+                                        print(f"终止进程 {pid} 时出错: {e}")
+                    else:
+                        print("所有Chrome进程已成功终止")
+                        
+                except subprocess.CalledProcessError:
+                    print("未找到剩余的Chrome进程")
+                    
+                # 7. 清理僵尸进程
+                print("清理僵尸进程...")
+                try:
+                    zombie_cmd = "ps -ef | grep -i defunct | grep -v grep"
+                    zombie_output = subprocess.check_output(zombie_cmd, shell=True, text=True)
+                    if zombie_output.strip():
+                        print(f"发现僵尸进程:\n{zombie_output}")
+                        # 尝试终止父进程
+                        for line in zombie_output.strip().split('\n'):
+                            if line.strip():
+                                parts = line.split()
+                                if len(parts) > 2:
+                                    ppid = parts[2]  # 父进程ID
+                                    try:
+                                        subprocess.run(f"kill -9 {ppid}", shell=True, capture_output=True)
+                                        print(f"终止父进程 PPID: {ppid}")
+                                    except:
+                                        pass
+                except subprocess.CalledProcessError:
+                    print("未发现僵尸进程")
+                    
+            except Exception as e:
+                print(f"Chrome进程清理过程中出错: {e}")
             
         # 等待进程终止
         time.sleep(2)
+        
+        # 清理用户数据目录中的锁文件
+        try:
+            print("清理Chrome用户数据目录锁文件...")
+            lock_pattern = os.path.join(os.path.abspath("."), "**", "*.lock")
+            singleton_pattern = os.path.join(os.path.abspath("."), "**", "SingletonLock")
+            
+            import glob
+            # 查找所有锁文件
+            lock_files = glob.glob(lock_pattern, recursive=True)
+            singleton_files = glob.glob(singleton_pattern, recursive=True)
+            
+            # 删除锁文件
+            for lock_file in lock_files + singleton_files:
+                try:
+                    print(f"删除锁文件: {lock_file}")
+                    os.remove(lock_file)
+                except Exception as e:
+                    print(f"删除锁文件 {lock_file} 时出错: {e}")
+        except Exception as e:
+            print(f"清理锁文件时出错: {e}")
+            
         return True
     except Exception as e:
         print(f"终止Chrome进程失败: {e}")

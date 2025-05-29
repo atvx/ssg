@@ -95,7 +95,9 @@ COPY . /app/
 RUN mkdir -p /app/chrome_user_data \
     && mkdir -p /app/tmp \
     && chmod -R 777 /app/chrome_user_data \
-    && chmod -R 777 /app/tmp
+    && chmod -R 777 /app/tmp \
+    && mkdir -p /tmp/chrome_tmp \
+    && chmod -R 777 /tmp/chrome_tmp
 
 # 环境变量设置
 ENV PYTHONPATH=/app
@@ -105,7 +107,7 @@ ENV HEADLESS=true
 ENV CHROME_DISABLE_GPU=true
 ENV CHROME_NO_SANDBOX=true
 ENV CHROME_DISABLE_DEV_SHM=true
-ENV TMP=/app/tmp
+ENV TMP=/tmp/chrome_tmp
 
 # 创建非root用户并设置权限
 RUN useradd --system --create-home --no-log-init --shell /bin/bash appuser \
