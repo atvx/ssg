@@ -1,122 +1,128 @@
-# 使用适配ARM架构的Python基础镜像
-FROM python:3.11-slim-bullseye
+FROM python:3.13-slim
 
+# 设置工作目录
 WORKDIR /app
 
-# 设置 DEBIAN_FRONTEND 为非交互模式，避免构建过程中的用户提示
-ENV DEBIAN_FRONTEND=noninteractive
+# 设置环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    DEBIAN_FRONTEND=noninteractive \
+    TZ=Asia/Shanghai
 
-# 安装必要的工具及依赖
-RUN apt-get update && apt-get install -y \
+# 安装依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
-    ca-certificates \
     curl \
-    jq \
     unzip \
-    procps \
-    # 添加SSL证书相关包
-    openssl \
-    apt-transport-https \
-    # Chrome 运行所需的核心依赖库
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libexpat1 \
-    libfontconfig1 \
-    libgbm1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
+    xvfb \
+    fonts-wqy-zenhei \
+    fonts-noto-cjk \
+    locales \
+    tzdata \
+    # 添加更多依赖以解决Chrome崩溃问题
     libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
-    libx11-6 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrandr2 \
-    libxrender1 \
-    libxss1 \
-    libxtst6 \
-    lsb-release \
-    xdg-utils \
-    gosu \
-    --no-install-recommends \
+    libcairo2 \
+    libatspi2.0-0 \
+    # 添加Firefox作为备选浏览器
+    firefox-esr \
+    && sed -i -e 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen \
+    && locale-gen \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 更新CA证书
-RUN update-ca-certificates
+# 设置中文支持
+ENV LANG=zh_CN.UTF-8 \
+    LANGUAGE=zh_CN:zh \
+    LC_ALL=zh_CN.UTF-8
 
-# 为ARM架构安装Chromium而不是Chrome（ARM架构更容易支持Chromium）
-RUN apt-get update && apt-get install -y \
+# 安装Chromium和ChromeDriver (适用于ARM64架构的Debian)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     chromium-driver \
-    --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建指向chromium的软链接，以便与期望chrome的代码兼容
-RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
-    && ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
+# 下载和安装geckodriver (Firefox WebDriver)
+RUN GECKODRIVER_VERSION="v0.33.0" \
+    && wget -q --no-verbose -O /tmp/geckodriver.tar.gz "https://github.com/mozilla/geckodriver/releases/download/${GECKODRIVER_VERSION}/geckodriver-${GECKODRIVER_VERSION}-linux-aarch64.tar.gz" \
+    && tar -xzf /tmp/geckodriver.tar.gz -C /usr/local/bin/ \
+    && rm /tmp/geckodriver.tar.gz \
+    && chmod +x /usr/local/bin/geckodriver
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# 创建Chrome软链接，避免修改业务代码
+RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome && \
+    ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable && \
+    ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver && \
+    chmod +x /usr/bin/chromedriver
 
-COPY . /app/
+# 创建目录以支持Chrome在沙盒模式下运行
+RUN mkdir -p /var/run/chrome && \
+    chmod -R 777 /var/run/chrome
 
-# 预先创建所有需要的目录并设置权限
-RUN mkdir -p /app/chrome_user_data \
-    && mkdir -p /app/tmp \
-    && mkdir -p /tmp/chrome_tmp \
-    && mkdir -p /tmp/chrome_data \
-    && chmod -R 777 /app/chrome_user_data \
-    && chmod -R 777 /app/tmp \
-    && chmod -R 777 /tmp/chrome_tmp \
-    && chmod -R 777 /tmp/chrome_data
+# 设置Chrome/Chromium环境变量
+ENV CHROME_BIN=/usr/bin/chromium \
+    CHROMIUM_PATH=/usr/bin/chromium \
+    CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+    GECKODRIVER_PATH=/usr/local/bin/geckodriver \
+    FIREFOX_BIN=/usr/bin/firefox-esr \
+    PATH="/usr/local/bin:/usr/bin:${PATH}" \
+    SELENIUM_DRIVER_PATH="/usr/bin/chromedriver" \
+    SELENIUM_BROWSER_BINARY="/usr/bin/chromium" \
+    # 添加Chrome默认启动参数，以适应Docker环境
+    CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars"
 
-# 环境变量设置
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-ENV PATH="/usr/local/bin:${PATH}"
-ENV HEADLESS=true
-ENV CHROME_DISABLE_GPU=true
-ENV CHROME_NO_SANDBOX=true
-ENV CHROME_DISABLE_DEV_SHM=true
-ENV TMP=/tmp/chrome_tmp
-# 添加Chromium特定环境变量
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROME_PATH=/usr/lib/chromium
-# 添加SSL相关环境变量
-ENV OPENSSL_CONF=/etc/ssl/openssl.cnf
+# 设置Xvfb（虚拟显示服务器）
+ENV DISPLAY=:99
 
-# 添加入口脚本
-COPY entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# 复制依赖文件
+COPY requirements.txt .
 
-# 创建非root用户
-RUN useradd --system --create-home --no-log-init --shell /bin/bash appuser
+# 安装Python依赖
+RUN pip install --no-cache-dir -r requirements.txt \
+    # 添加webdriver-manager支持
+    && pip install --no-cache-dir selenium-wire webdriver-manager pyvirtualdisplay
 
-# 确保所有目录权限正确设置
-RUN chown -R appuser:appuser /app \
-    && chown -R appuser:appuser /tmp/chrome_tmp \
-    && chown -R appuser:appuser /tmp/chrome_data \
-    && chown -R appuser:appuser /app/chrome_user_data
+# 复制Selenium设置脚本
+COPY selenium_setup.py /usr/local/bin/selenium_setup.py
+RUN chmod +x /usr/local/bin/selenium_setup.py
 
-# 保持root用户运行entrypoint.sh，脚本内部会切换到appuser
-# 不要在这里切换到appuser用户
+# 创建一个wrapper脚本来设置环境
+RUN echo '#!/bin/bash\n\
+# 启动虚拟显示服务器\n\
+Xvfb :99 -screen 0 1920x1080x24 -ac &\n\
+# 确保chrome_user_data目录存在并有正确权限\n\
+mkdir -p /app/chrome_user_data\n\
+chmod -R 777 /app/chrome_user_data\n\
+# 运行Selenium设置脚本\n\
+python /usr/local/bin/selenium_setup.py\n\
+# 设置环境变量\n\
+export PYTHONPATH=/app\n\
+export CHROME_OPTIONS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"\n\
+# 执行命令\n\
+exec "$@"' > /usr/local/bin/entrypoint.sh && \
+chmod +x /usr/local/bin/entrypoint.sh
 
-EXPOSE 8000
+# 复制项目文件
+COPY . .
 
+# 设置容器入口点
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# 设置容器默认命令
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 

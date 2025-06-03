@@ -78,6 +78,10 @@ def init_chrome_driver(config, force_new_session=False):
             # 设置请求过滤
             driver.scopes = scopes
             print(f"已启用API监控，监控范围: {scopes}")
+            browser_version = driver.capabilities['browserVersion']
+            driver_version = driver.capabilities['chrome']['chromedriverVersion'].split(' ')[0]
+            print(f"Chrome浏览器版本: {browser_version}")
+            print(f"ChromeDriver版本: {driver_version}")
         else:
             driver = webdriver.Chrome(options=chrome_options)
             
