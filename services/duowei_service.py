@@ -58,20 +58,33 @@ def fetch_duowei_data(date: Optional[str] = None) -> Dict[str, Any]:
     
     try:
         # 获取多维系统配置
+        duowei_config = settings.DUOWEI_CONFIG if hasattr(settings, "DUOWEI_CONFIG") else {}
+        
+        # 确保所有必要的配置都存在
+        base_url = duowei_config.get("BASE_URL")
+        user_id = duowei_config.get("USER_ID")
+        db_name = duowei_config.get("DB_NAME")
+            
+        # 创建精简的配置字典，只包含必要的配置项
         config = {
-            "BASE_URL": settings.DUOWEI_CONFIG["BASE_URL"],
-            "USER_ID": settings.DUOWEI_CONFIG["USER_ID"],
-            "DB_NAME": settings.DUOWEI_CONFIG["DB_NAME"],
-            "OUTPUT_FILE": "sales_duowei.json",
-            "SAVE_TO_FILE": False  # 默认不保存结果到文件
+            "BASE_URL": base_url,
+            "USER_ID": user_id,
+            "DB_NAME": db_name,
         }
         
-        # 验证配置
-        for key, value in config.items():
-            if not value and key != "OUTPUT_FILE":
-                logger.error(f"多维系统配置错误: {key} 未设置")
-                result["message"] = f"多维系统配置错误: {key} 未设置"
-                return result
+        logger.info(f"多维系统配置准备完成: BASE_URL={base_url}, USER_ID={user_id}, DB_NAME={db_name}")
+        
+        # 验证必要的配置
+        missing_configs = []
+        for key in ["BASE_URL", "USER_ID", "DB_NAME"]:
+            if not config.get(key):
+                missing_configs.append(key)
+        
+        if missing_configs:
+            error_msg = f"多维系统配置错误: {', '.join(missing_configs)} 未设置"
+            logger.error(error_msg)
+            result["message"] = error_msg
+            return result
         
         # 调用多维系统API获取数据
         try:

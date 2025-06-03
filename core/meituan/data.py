@@ -360,14 +360,4 @@ def get_all_meituan_data(driver, wait, config, target_date=None):
         result = perform_advanced_search(driver, wait, target_org=name, config=config)
         results.append(result)
     
-    # 保存结果到文件（如果配置允许）
-    save_to_file = config.get("SAVE_TO_FILE", False)
-    if save_to_file and "OUTPUT_FILE" in config:
-        try:
-            with open(config["OUTPUT_FILE"], 'w', encoding='utf-8') as f:
-                json.dump(results, f, ensure_ascii=False, indent=2)
-            print(f"结果已保存到文件: {config['OUTPUT_FILE']}")
-        except Exception as e:
-            print(f"保存结果到文件时出错: {e}")
-    
     return results 

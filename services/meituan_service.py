@@ -224,8 +224,6 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
             api_config = {
                 "API_TIMEOUT": 60,
                 "BUSINESS_SUMMARY_URL": "https://pos.meituan.com/web/api/v2/reports/combine/business-summary-page",
-                "OUTPUT_FILE": "sales_meituan.json",
-                "SAVE_TO_FILE": False  # 默认不保存结果到文件
             }
             
             def patched_monitor_api_response(driver, url, max_wait_time=None, methods=None, start_time=None, **kwargs):

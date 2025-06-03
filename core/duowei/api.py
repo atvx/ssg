@@ -1,6 +1,10 @@
 import requests
 import json
 import re
+import logging
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 def get_warehouse_info(config):
@@ -13,6 +17,13 @@ def get_warehouse_info(config):
     Returns:
         list: 仓库信息列表
     """
+    # 验证必要的配置
+    required_configs = ["BASE_URL", "USER_ID", "DB_NAME"]
+    for key in required_configs:
+        if key not in config or not config[key]:
+            logger.error(f"配置错误: {key} 未设置")
+            return []
+            
     # 接口地址
     url = f"{config['BASE_URL']}/jgsz"
 
@@ -23,67 +34,71 @@ def get_warehouse_info(config):
     }
 
     # 发送 GET 请求
-    response = requests.get(url, params=params)
+    try:
+        response = requests.get(url, params=params)
 
-    # 解析响应内容
-    if response.status_code == 200:
-        try:
-            data = response.json()
-            if data["status"] == 1 and "data" in data:
-                all_stores = data["data"]
-                
-                # 步骤1: 从数据中筛选出名称包含"仓"的门店
-                warehouse_stores = []
-                warehouse_bmbhs = []
-                for store in all_stores:
-                    if "bmmc" in store and re.search(r"仓", store["bmmc"]):
-                        warehouse_stores.append(store)
-                        if "bmbh" in store:
-                            warehouse_bmbhs.append(store["bmbh"])
-                
-                # 步骤2: 找到这些仓库的所有子门店
-                child_stores_by_parent = {}
-                for warehouse_bmbh in warehouse_bmbhs:
-                    child_stores_by_parent[warehouse_bmbh] = []
+        # 解析响应内容
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                if data["status"] == 1 and "data" in data:
+                    all_stores = data["data"]
                     
-                for store in all_stores:
-                    if "fbmbh" in store and store["fbmbh"] in warehouse_bmbhs:
-                        parent_bmbh = store["fbmbh"]
-                        child_stores_by_parent[parent_bmbh].append(store)
-                
-                # 步骤3: 构建仓库信息结构
-                result = []
-                for warehouse in warehouse_stores:
-                    warehouse_bmbh = warehouse.get("bmbh", "")
-                    warehouse_json = {
-                        "id": warehouse.get("bmbh", ""),
-                        "name": warehouse.get("bmmc", ""),
-                        "pid": warehouse.get("fbmbh", ""),
-                        "children": []
-                    }
+                    # 步骤1: 从数据中筛选出名称包含"仓"的门店
+                    warehouse_stores = []
+                    warehouse_bmbhs = []
+                    for store in all_stores:
+                        if "bmmc" in store and re.search(r"仓", store["bmmc"]):
+                            warehouse_stores.append(store)
+                            if "bmbh" in store:
+                                warehouse_bmbhs.append(store["bmbh"])
                     
-                    # 添加子门店
-                    if warehouse_bmbh in child_stores_by_parent:
-                        children = child_stores_by_parent[warehouse_bmbh]
-                        for child in children:
-                            child_json = {
-                                "id": child.get("bmbh", ""),
-                                "name": child.get("bmmc", ""),
-                                "pid": child.get("fbmbh", "")
-                            }
-                            warehouse_json["children"].append(child_json)
+                    # 步骤2: 找到这些仓库的所有子门店
+                    child_stores_by_parent = {}
+                    for warehouse_bmbh in warehouse_bmbhs:
+                        child_stores_by_parent[warehouse_bmbh] = []
+                        
+                    for store in all_stores:
+                        if "fbmbh" in store and store["fbmbh"] in warehouse_bmbhs:
+                            parent_bmbh = store["fbmbh"]
+                            child_stores_by_parent[parent_bmbh].append(store)
                     
-                    result.append(warehouse_json)
-                
-                return result
-            else:
-                print("API返回错误或数据结构不符合预期")
+                    # 步骤3: 构建仓库信息结构
+                    result = []
+                    for warehouse in warehouse_stores:
+                        warehouse_bmbh = warehouse.get("bmbh", "")
+                        warehouse_json = {
+                            "id": warehouse.get("bmbh", ""),
+                            "name": warehouse.get("bmmc", ""),
+                            "pid": warehouse.get("fbmbh", ""),
+                            "children": []
+                        }
+                        
+                        # 添加子门店
+                        if warehouse_bmbh in child_stores_by_parent:
+                            children = child_stores_by_parent[warehouse_bmbh]
+                            for child in children:
+                                child_json = {
+                                    "id": child.get("bmbh", ""),
+                                    "name": child.get("bmmc", ""),
+                                    "pid": child.get("fbmbh", "")
+                                }
+                                warehouse_json["children"].append(child_json)
+                        
+                        result.append(warehouse_json)
+                    
+                    return result
+                else:
+                    logger.error("API返回错误或数据结构不符合预期")
+                    return []
+            except json.JSONDecodeError:
+                logger.error("返回内容不是有效的JSON格式")
                 return []
-        except json.JSONDecodeError:
-            print("返回内容不是有效的JSON格式")
+        else:
+            logger.error(f"请求失败，状态码: {response.status_code}")
             return []
-    else:
-        print("请求失败")
+    except Exception as e:
+        logger.error(f"获取仓库信息时出错: {str(e)}")
         return []
 
 
@@ -96,6 +111,13 @@ def get_sales_data(config, bmbh_string, date=None):
         bmbh_string: 门店编号字符串
         date: 日期字符串，格式为YYYY-MM-DD，默认为当天
     """
+    # 验证必要的配置
+    required_configs = ["BASE_URL", "DB_NAME"]
+    for key in required_configs:
+        if key not in config or not config[key]:
+            logger.error(f"配置错误: {key} 未设置")
+            return []
+            
     # 接口地址
     url = f"{config['BASE_URL']}/mdyyzshz"
 
@@ -108,16 +130,20 @@ def get_sales_data(config, bmbh_string, date=None):
     }
 
     # 发送 GET 请求
-    response = requests.get(url, params=params)
+    try:
+        response = requests.get(url, params=params)
 
-    # 解析响应内容
-    if response.status_code == 200:
-        result = response.json()
-        if result.get('status') == 1 and result.get('msg') == 'ok':
-            return result.get('data', [])
+        # 解析响应内容
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('status') == 1 and result.get('msg') == 'ok':
+                return result.get('data', [])
+            else:
+                logger.error(f"请求返回错误: {result.get('msg')}")
+                return []
         else:
-            print(f"请求返回错误: {result.get('msg')}")
+            logger.error(f"请求失败，状态码: {response.status_code}")
             return []
-    else:
-        print(f"请求失败，状态码: {response.status_code}")
+    except Exception as e:
+        logger.error(f"获取销售数据时出错: {str(e)}")
         return [] 
