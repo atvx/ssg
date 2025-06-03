@@ -20,6 +20,12 @@ def init_chrome_driver(config, force_new_session=False):
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
+    
+    # 添加以下代码，处理无头模式
+    if config.get("HEADLESS", False):
+        chrome_options.add_argument("--headless=new")  # 使用新的headless模式
+        print("启用无头模式运行Chrome")
+    
     chrome_options.add_argument(
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])

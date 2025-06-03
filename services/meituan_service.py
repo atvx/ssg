@@ -124,7 +124,7 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
         # 创建一个包含所有参数的配置字典
         browser_config = {
             "USER_DATA_DIR": settings.CHROME_USER_DATA_DIR,
-            "HEADLESS": False,
+            "HEADLESS": settings.HEADLESS,
             "MONITOR_API_RESPONSE": True,
             "MONITOR_SCOPES": [".*pos\\.meituan\\.com.*"]  # 匹配所有美团POS域名下的请求
         }
