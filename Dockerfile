@@ -21,6 +21,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-cjk \
     locales \
     tzdata \
+    ntp \
+    procps \
+    htop \
+    net-tools \
     # 添加更多依赖以解决Chrome崩溃问题
     libnss3 \
     libnspr4 \
@@ -45,6 +49,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && locale-gen \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# 设置时区和NTP配置
+RUN echo "Asia/Shanghai" > /etc/timezone \
+    && dpkg-reconfigure -f noninteractive tzdata \
+    && echo "server 0.cn.pool.ntp.org" >> /etc/ntp.conf \
+    && echo "server 1.cn.pool.ntp.org" >> /etc/ntp.conf \
+    && echo "server 2.cn.pool.ntp.org" >> /etc/ntp.conf \
+    && echo "server 3.cn.pool.ntp.org" >> /etc/ntp.conf
 
 # 设置中文支持
 ENV LANG=zh_CN.UTF-8 \
@@ -77,6 +89,10 @@ RUN ln -sf /opt/chrome-linux64/chrome /usr/bin/google-chrome && \
 RUN mkdir -p /var/run/chrome && \
     chmod -R 777 /var/run/chrome
 
+# 创建Chrome临时数据目录
+RUN mkdir -p /tmp/chrome_tmp && \
+    chmod -R 777 /tmp/chrome_tmp
+
 # 设置Chrome/Chromium环境变量
 ENV CHROME_BIN=/usr/bin/google-chrome \
     CHROMIUM_PATH=/usr/bin/google-chrome \
@@ -98,7 +114,9 @@ COPY requirements.txt .
 # 安装Python依赖
 RUN pip install --no-cache-dir -r requirements.txt \
     # 添加webdriver-manager支持
-    && pip install --no-cache-dir selenium-wire webdriver-manager pyvirtualdisplay
+    && pip install --no-cache-dir selenium-wire webdriver-manager pyvirtualdisplay \
+    # 添加更多超时处理库
+    && pip install --no-cache-dir retry timeout-decorator requests-toolbelt tenacity
 
 # 复制Selenium设置脚本
 COPY selenium_setup.py /usr/local/bin/selenium_setup.py
@@ -106,11 +124,18 @@ RUN chmod +x /usr/local/bin/selenium_setup.py
 
 # 创建一个wrapper脚本来设置环境
 RUN echo '#!/bin/bash\n\
+# 同步时间\n\
+service ntp stop || true\n\
+ntpd -gq || true\n\
+service ntp start || true\n\
 # 启动虚拟显示服务器\n\
 Xvfb :99 -screen 0 1920x1080x24 -ac &\n\
 # 确保chrome_user_data目录存在并有正确权限\n\
 mkdir -p /app/chrome_user_data\n\
 chmod -R 777 /app/chrome_user_data\n\
+# 确保临时目录存在并有正确权限\n\
+mkdir -p /tmp/chrome_tmp\n\
+chmod -R 777 /tmp/chrome_tmp\n\
 # 运行Selenium设置脚本\n\
 python /usr/local/bin/selenium_setup.py\n\
 # 设置环境变量\n\
@@ -127,4 +152,4 @@ COPY . .
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # 设置容器默认命令
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "120"] 

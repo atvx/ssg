@@ -10,13 +10,18 @@ services:
     privileged: true
     cap_add:
       - SYS_ADMIN
+      - SYS_TIME
     # 增加共享内存大小
-    shm_size: 4gb
+    shm_size: 8gb
     # 增加资源限制
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 6G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
     security_opt:
       - seccomp=unconfined
     ports:
@@ -28,6 +33,9 @@ services:
       - /dev/shm:/dev/shm
       # 临时目录映射到容器外部
       - /tmp/chrome_tmp:/tmp/chrome_tmp
+      # 添加时间同步
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       # 添加selenium_setup.py
       - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
     environment:
@@ -45,7 +53,17 @@ services:
       - SE_OPTS=--disable-dev-shm-usage
       - WDM_LOG_LEVEL=0
       - WDM_SSL_VERIFY=0
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+      # 增加Celery的超时设置
+      - CELERY_TASK_TIME_LIMIT=600
+      - CELERY_TASK_SOFT_TIME_LIMIT=500
+      - CELERY_BROKER_CONNECTION_TIMEOUT=30
+      - CELERY_BROKER_HEARTBEAT=10
+      - TZ=Asia/Shanghai
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120
     networks:
       - app-network
 
@@ -60,13 +78,18 @@ services:
     privileged: true
     cap_add:
       - SYS_ADMIN
+      - SYS_TIME
     # 增加共享内存大小
-    shm_size: 4gb
+    shm_size: 8gb
     # 增加资源限制
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 6G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
     security_opt:
       - seccomp=unconfined
     volumes:
@@ -76,6 +99,9 @@ services:
       - /dev/shm:/dev/shm
       # 临时目录映射到容器外部
       - /tmp/chrome_tmp:/tmp/chrome_tmp
+      # 添加时间同步
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       # 添加selenium_setup.py
       - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
     environment:
@@ -92,7 +118,17 @@ services:
       - SE_OPTS=--disable-dev-shm-usage
       - WDM_LOG_LEVEL=0
       - WDM_SSL_VERIFY=0
-    command: celery -A celery_app worker --loglevel=info
+      # 增加Celery的超时设置
+      - CELERY_TASK_TIME_LIMIT=600
+      - CELERY_TASK_SOFT_TIME_LIMIT=500
+      - CELERY_BROKER_CONNECTION_TIMEOUT=30
+      - CELERY_BROKER_HEARTBEAT=10
+      - TZ=Asia/Shanghai
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    command: celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500
     depends_on:
       - api
     networks:

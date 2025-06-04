@@ -5,11 +5,21 @@ from seleniumwire import webdriver as wire_webdriver
 import os
 import time
 import subprocess
+from retry import retry
+from tenacity import retry as tenacity_retry
+from tenacity import stop_after_attempt, wait_fixed, retry_if_exception_type
 
 from config.settings import settings
 from utils.file_utils import kill_chrome_processes
 
 
+# 重试装饰器，针对浏览器启动
+@tenacity_retry(
+    stop=stop_after_attempt(3),  # 最多尝试3次
+    wait=wait_fixed(2),  # 每次等待2秒
+    retry=retry_if_exception_type((Exception)),  # 任何异常都重试
+    reraise=True  # 最后一次失败时抛出原始异常
+)
 def init_chrome_driver(config, force_new_session=False):
     """初始化Chrome浏览器
     
@@ -17,11 +27,18 @@ def init_chrome_driver(config, force_new_session=False):
         config: 配置字典
         force_new_session (bool): 如果为True，不使用现有的用户数据目录
     """
+    # 在启动前清理可能的僵尸Chrome进程
+    try:
+        kill_chrome_processes()
+        time.sleep(1)  # 等待进程完全终止
+    except Exception as e:
+        print(f"清理Chrome进程时出错（非致命）: {e}")
+
     chrome_options = Options()
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--window-size=1280,800")  # 减小窗口大小
     
     # 添加以下代码，处理无头模式
     if config.get("HEADLESS", False):
@@ -56,6 +73,13 @@ def init_chrome_driver(config, force_new_session=False):
         chrome_options.add_argument("--ignore-certificate-errors")
         # 设置不等待页面加载完成
         chrome_options.page_load_strategy = 'eager'
+        # 添加进程限制
+        chrome_options.add_argument("--js-flags=--max-old-space-size=2048")
+        chrome_options.add_argument("--memory-pressure-off")
+        chrome_options.add_argument("--disable-crash-reporter")
+        chrome_options.add_argument("--disable-in-process-stack-traces")
+        # 禁用某些可能导致问题的功能
+        chrome_options.add_argument("--disable-site-isolation-trials")
         print("启用无头模式运行Chrome")
     
     chrome_options.add_argument(
@@ -113,6 +137,10 @@ def init_chrome_driver(config, force_new_session=False):
         )
         
         monitor_api = config.get("MONITOR_API_RESPONSE", False)
+        
+        # 在启动前等待一段时间，确保系统资源可用
+        time.sleep(1)
+        
         if monitor_api:
             # 优化selenium-wire配置
             seleniumwire_options = {
@@ -121,41 +149,94 @@ def init_chrome_driver(config, force_new_session=False):
                 'verify_ssl': False,  # 不验证SSL证书，避免某些HTTPS请求问题
                 'request_storage': 'memory',  # 使用内存存储请求，提高性能
                 'request_storage_max_size': 100,  # 最多存储100个请求，避免内存问题
-                'connection_timeout': 60,  # 连接超时设置
-                'connection_keep_alive': True  # 保持连接
+                'connection_timeout': 120,  # 连接超时设置
+                'connection_keep_alive': True,  # 保持连接
+                'max_retries': 3  # 最大重试次数
             }
             
             # 设置请求过滤范围
             scopes = config.get("MONITOR_SCOPES", [r'.*pos\.meituan\.com.*'])
             
             print(f"使用ChromeDriver: {chromedriver_path}")
+            
+            # 再次检查目录权限
+            tmp_dir = "/tmp/chrome_tmp"
+            if not os.path.exists(tmp_dir):
+                os.makedirs(tmp_dir, exist_ok=True)
+                os.chmod(tmp_dir, 0o777)
+            
             # 创建driver
-            driver = wire_webdriver.Chrome(
-                service=service,
-                options=chrome_options, 
-                seleniumwire_options=seleniumwire_options
-            )
+            for attempt in range(3):  # 最多尝试3次
+                try:
+                    print(f"尝试启动Chrome (attempt {attempt+1}/3)")
+                    driver = wire_webdriver.Chrome(
+                        service=service,
+                        options=chrome_options, 
+                        seleniumwire_options=seleniumwire_options
+                    )
+                    
+                    # 设置请求过滤
+                    driver.scopes = scopes
+                    # 设置脚本和页面加载超时
+                    driver.set_script_timeout(30)
+                    driver.set_page_load_timeout(60)
+                    
+                    print(f"已启用API监控，监控范围: {scopes}")
+                    try:
+                        browser_version = driver.capabilities['browserVersion']
+                        driver_version = driver.capabilities['chrome']['chromedriverVersion'].split(' ')[0]
+                        print(f"Chrome浏览器版本: {browser_version}")
+                        print(f"ChromeDriver版本: {driver_version}")
+                    except Exception as e:
+                        print(f"获取浏览器版本信息失败: {e}")
+                    
+                    # 检查是否成功初始化
+                    if driver:
+                        print("Chrome浏览器已成功启动")
+                        break
+                except Exception as e:
+                    print(f"启动Chrome失败 (attempt {attempt+1}/3): {e}")
+                    if attempt < 2:  # 如果不是最后一次尝试
+                        time.sleep(3)  # 等待一段时间后重试
+                        try:
+                            kill_chrome_processes()  # 清理可能的僵尸进程
+                        except:
+                            pass
+                    else:
+                        raise  # 最后一次尝试失败时抛出异常
             
-            # 设置请求过滤
-            driver.scopes = scopes
-            # 设置脚本和页面加载超时
-            driver.set_script_timeout(30)
-            driver.set_page_load_timeout(60)
-            
-            print(f"已启用API监控，监控范围: {scopes}")
-            try:
-                browser_version = driver.capabilities['browserVersion']
-                driver_version = driver.capabilities['chrome']['chromedriverVersion'].split(' ')[0]
-                print(f"Chrome浏览器版本: {browser_version}")
-                print(f"ChromeDriver版本: {driver_version}")
-            except Exception as e:
-                print(f"获取浏览器版本信息失败: {e}")
         else:
             print(f"使用ChromeDriver: {chromedriver_path}")
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            # 设置脚本和页面加载超时
-            driver.set_script_timeout(30)
-            driver.set_page_load_timeout(60)
+            
+            # 再次检查目录权限
+            tmp_dir = "/tmp/chrome_tmp"
+            if not os.path.exists(tmp_dir):
+                os.makedirs(tmp_dir, exist_ok=True)
+                os.chmod(tmp_dir, 0o777)
+                
+            # 使用标准webdriver，带重试
+            for attempt in range(3):  # 最多尝试3次
+                try:
+                    print(f"尝试启动Chrome (attempt {attempt+1}/3)")
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
+                    # 设置脚本和页面加载超时
+                    driver.set_script_timeout(30)
+                    driver.set_page_load_timeout(60)
+                    
+                    # 检查是否成功初始化
+                    if driver:
+                        print("Chrome浏览器已成功启动")
+                        break
+                except Exception as e:
+                    print(f"启动Chrome失败 (attempt {attempt+1}/3): {e}")
+                    if attempt < 2:  # 如果不是最后一次尝试
+                        time.sleep(3)  # 等待一段时间后重试
+                        try:
+                            kill_chrome_processes()  # 清理可能的僵尸进程
+                        except:
+                            pass
+                    else:
+                        raise  # 最后一次尝试失败时抛出异常
             
         # 防止检测
         try:
@@ -186,7 +267,7 @@ def init_chrome_driver(config, force_new_session=False):
                 chrome_options.add_argument("--no-sandbox")
                 chrome_options.add_argument("--disable-dev-shm-usage")
                 chrome_options.add_argument("--disable-gpu")
-                chrome_options.add_argument("--window-size=1920,1080")
+                chrome_options.add_argument("--window-size=1280,800")  # 减小窗口大小
                 if config.get("HEADLESS", False):
                     chrome_options.add_argument("--headless=new")
                     # 添加解决DevToolsActivePort问题的参数
@@ -219,6 +300,13 @@ def init_chrome_driver(config, force_new_session=False):
                     chrome_options.add_argument("--ignore-certificate-errors")
                     # 设置不等待页面加载完成
                     chrome_options.page_load_strategy = 'eager'
+                    # 添加进程限制
+                    chrome_options.add_argument("--js-flags=--max-old-space-size=2048")
+                    chrome_options.add_argument("--memory-pressure-off")
+                    chrome_options.add_argument("--disable-crash-reporter")
+                    chrome_options.add_argument("--disable-in-process-stack-traces")
+                    # 禁用某些可能导致问题的功能
+                    chrome_options.add_argument("--disable-site-isolation-trials")
                 
                 chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
                 chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -247,30 +335,80 @@ def init_chrome_driver(config, force_new_session=False):
                         'verify_ssl': False,
                         'request_storage': 'memory',
                         'request_storage_max_size': 100,
-                        'connection_timeout': 60,
-                        'connection_keep_alive': True
+                        'connection_timeout': 120,
+                        'connection_keep_alive': True,
+                        'max_retries': 3
                     }
                     
                     # 设置请求过滤范围
                     scopes = config.get("MONITOR_SCOPES", [r'.*pos\.meituan\.com.*'])
                     
-                    # 创建driver
-                    driver = wire_webdriver.Chrome(
-                        service=service,
-                        options=chrome_options,
-                        seleniumwire_options=seleniumwire_options
-                    )
+                    # 再次检查目录权限
+                    tmp_dir = "/tmp/chrome_tmp"
+                    if not os.path.exists(tmp_dir):
+                        os.makedirs(tmp_dir, exist_ok=True)
+                        os.chmod(tmp_dir, 0o777)
                     
-                    # 设置请求过滤
-                    driver.scopes = scopes
-                    # 设置脚本和页面加载超时
-                    driver.set_script_timeout(30)
-                    driver.set_page_load_timeout(60)
+                    # 创建driver，带重试
+                    for attempt in range(3):  # 最多尝试3次
+                        try:
+                            print(f"尝试启动Chrome (attempt {attempt+1}/3)")
+                            driver = wire_webdriver.Chrome(
+                                service=service,
+                                options=chrome_options,
+                                seleniumwire_options=seleniumwire_options
+                            )
+                            
+                            # 设置请求过滤
+                            driver.scopes = scopes
+                            # 设置脚本和页面加载超时
+                            driver.set_script_timeout(30)
+                            driver.set_page_load_timeout(60)
+                            
+                            # 检查是否成功初始化
+                            if driver:
+                                print("Chrome浏览器已成功启动")
+                                break
+                        except Exception as e:
+                            print(f"启动Chrome失败 (attempt {attempt+1}/3): {e}")
+                            if attempt < 2:  # 如果不是最后一次尝试
+                                time.sleep(3)  # 等待一段时间后重试
+                                try:
+                                    kill_chrome_processes()  # 清理可能的僵尸进程
+                                except:
+                                    pass
+                            else:
+                                raise  # 最后一次尝试失败时抛出异常
                 else:
-                    driver = webdriver.Chrome(service=service, options=chrome_options)
-                    # 设置脚本和页面加载超时
-                    driver.set_script_timeout(30)
-                    driver.set_page_load_timeout(60)
+                    # 再次检查目录权限
+                    tmp_dir = "/tmp/chrome_tmp"
+                    if not os.path.exists(tmp_dir):
+                        os.makedirs(tmp_dir, exist_ok=True)
+                        os.chmod(tmp_dir, 0o777)
+                    
+                    # 使用标准webdriver，带重试
+                    for attempt in range(3):  # 最多尝试3次
+                        try:
+                            print(f"尝试启动Chrome (attempt {attempt+1}/3)")
+                            driver = webdriver.Chrome(service=service, options=chrome_options)
+                            # 设置脚本和页面加载超时
+                            driver.set_script_timeout(30)
+                            driver.set_page_load_timeout(60)
+                            
+                            # 检查是否成功初始化
+                            if driver:
+                                print("Chrome浏览器已成功启动")
+                                break
+                        except Exception as e:
+                            print(f"启动Chrome失败 (attempt {attempt+1}/3): {e}")
+                            if attempt < 2:  # 如果不是最后一次尝试
+                                time.sleep(3)  # 等待一段时间后重试
+                                try:
+                                    kill_chrome_processes()  # 清理可能的僵尸进程
+                                except:
+                                    pass
+                            else:
+                                raise  # 最后一次尝试失败时抛出异常
                 
                 # 防止检测
                 try:
