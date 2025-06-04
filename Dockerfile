@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-cjk \
     locales \
     tzdata \
-    ntp \
+    ntpdate \
     procps \
     htop \
     net-tools \
@@ -50,13 +50,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 设置时区和NTP配置
+# 设置时区和时间同步配置
 RUN echo "Asia/Shanghai" > /etc/timezone \
     && dpkg-reconfigure -f noninteractive tzdata \
-    && echo "server 0.cn.pool.ntp.org" >> /etc/ntp.conf \
-    && echo "server 1.cn.pool.ntp.org" >> /etc/ntp.conf \
-    && echo "server 2.cn.pool.ntp.org" >> /etc/ntp.conf \
-    && echo "server 3.cn.pool.ntp.org" >> /etc/ntp.conf
+    # 使用ntpdate替换ntp服务
+    && echo "#!/bin/bash\nntpdate -u cn.pool.ntp.org || true" > /usr/local/bin/sync_time \
+    && chmod +x /usr/local/bin/sync_time
 
 # 设置中文支持
 ENV LANG=zh_CN.UTF-8 \
@@ -125,9 +124,8 @@ RUN chmod +x /usr/local/bin/selenium_setup.py
 # 创建一个wrapper脚本来设置环境
 RUN echo '#!/bin/bash\n\
 # 同步时间\n\
-service ntp stop || true\n\
-ntpd -gq || true\n\
-service ntp start || true\n\
+/usr/local/bin/sync_time\n\
+\n\
 # 启动虚拟显示服务器\n\
 Xvfb :99 -screen 0 1920x1080x24 -ac &\n\
 # 确保chrome_user_data目录存在并有正确权限\n\

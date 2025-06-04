@@ -19,9 +19,6 @@ services:
         limits:
           memory: 6G
           cpus: '2.0'
-        reservations:
-          memory: 2G
-          cpus: '1.0'
     security_opt:
       - seccomp=unconfined
     ports:
@@ -104,9 +101,6 @@ services:
         limits:
           memory: 6G
           cpus: '2.0'
-        reservations:
-          memory: 2G
-          cpus: '1.0'
     security_opt:
       - seccomp=unconfined
     volumes:

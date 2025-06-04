@@ -72,33 +72,60 @@ echo "=== 3. 创建Chrome临时文件目录 ==="
 mkdir -p /tmp/chrome_tmp
 chmod 777 /tmp/chrome_tmp
 
-echo "=== 4. 构建和启动Docker服务 ==="
+# 创建时间同步脚本
+echo "=== 4. 创建时间同步脚本 ==="
+cat > sync_time.sh << EOF
+#!/bin/bash
+# 同步主机系统时间
+ntpdate -u cn.pool.ntp.org
+
+# 同步Docker容器的时间
+docker exec ssg-api /usr/local/bin/sync_time
+docker exec ssg-celery-worker /usr/local/bin/sync_time
+
+echo "\$(date '+%Y-%m-%d %H:%M:%S') 时间同步完成"
+EOF
+chmod +x sync_time.sh
+
+# 创建定时任务
+echo "=== 5. 创建定时同步任务 ==="
+(crontab -l 2>/dev/null || echo "") | grep -v "sync_time.sh" | { cat; echo "*/10 * * * * $(pwd)/sync_time.sh >> $(pwd)/time_sync.log 2>&1"; } | crontab -
+
+echo "=== 6. 构建和启动Docker服务 ==="
+# 检查是否安装了Docker Compose
 if command -v docker-compose &> /dev/null; then
-    docker-compose build
-    docker-compose up -d
-elif command -v docker compose &> /dev/null; then
-    docker compose build
-    docker compose up -d
+    COMPOSE_CMD="docker-compose"
+elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+    COMPOSE_CMD="docker compose"
 else
     echo "未找到docker-compose命令，请确保Docker和Docker Compose已安装。"
     exit 1
 fi
 
-echo "=== 5. 部署完成 ==="
-echo "服务已启动，API文档地址: http://localhost:8000/docs"
+# 停止并移除现有容器
+$COMPOSE_CMD down -v
+
+# 强制重建镜像
+$COMPOSE_CMD build --no-cache
+
+# 启动服务
+$COMPOSE_CMD up -d
+
+echo "=== 7. 部署完成 ==="
+echo "服务已启动，API文档地址: http://localhost:3400/docs"
 echo
 
 # 显示容器状态
 echo "=== 容器状态 ==="
-if command -v docker-compose &> /dev/null; then
-    docker-compose ps
-elif command -v docker compose &> /dev/null; then
-    docker compose ps
-fi
+$COMPOSE_CMD ps
+
+# 立即同步一次时间
+echo "=== 执行时间同步 ==="
+./sync_time.sh
 
 echo
 echo "使用以下命令查看服务日志："
-echo "API服务日志: docker compose logs -f api"
-echo "Celery Worker日志: docker compose logs -f celery_worker"
+echo "API服务日志: $COMPOSE_CMD logs -f api"
+echo "Celery Worker日志: $COMPOSE_CMD logs -f celery_worker"
 echo
 echo "感谢使用销售数据获取系统！" 
