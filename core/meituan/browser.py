@@ -70,7 +70,7 @@ def init_chrome_driver(config, force_new_session=False):
             }
             
             # 设置请求过滤范围
-            scopes = config.get("MONITOR_SCOPES", ['.*pos\.meituan\.com.*'])
+            scopes = config.get("MONITOR_SCOPES", [r'.*pos\.meituan\.com.*'])
             
             # 创建driver
             driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)
@@ -135,7 +135,7 @@ def init_chrome_driver(config, force_new_session=False):
                     }
                     
                     # 设置请求过滤范围
-                    scopes = config.get("MONITOR_SCOPES", ['.*pos\.meituan\.com.*'])
+                    scopes = config.get("MONITOR_SCOPES", [r'.*pos\.meituan\.com.*'])
                     
                     # 创建driver
                     driver = wire_webdriver.Chrome(options=chrome_options, seleniumwire_options=seleniumwire_options)

@@ -8,7 +8,6 @@ import os
 import sys
 import subprocess
 from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.core.utils import ChromeType
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 
@@ -22,7 +21,7 @@ def setup_selenium_drivers():
     
     try:
         # 尝试使用webdriver-manager下载并设置chromedriver
-        driver_path = ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+        driver_path = ChromeDriverManager().install()
         print(f"ChromeDriver已安装在: {driver_path}")
         
         # 设置环境变量，使其他程序能够找到驱动程序
