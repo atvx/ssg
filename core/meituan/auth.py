@@ -135,6 +135,8 @@ def login_with_account(driver, wait, cookies_file, db: Session = None, user_id: 
     Returns:
         bool: 登录成功返回True，否则返回False
     """
+    logger.info("===== 开始账号密码登录流程 =====")
+    
     # 获取账号信息
     username = None
     password = None
@@ -158,109 +160,253 @@ def login_with_account(driver, wait, cookies_file, db: Session = None, user_id: 
         logger.error("账号或密码未配置")
         return False
     
+    logger.info(f"使用账号: {username} 进行登录")
+    
     # 切换到登录iframe
-    try:
-        # 等待页面加载
-        time.sleep(2)
-        
-        # 查找登录iframe
-        login_iframe = wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
-        
-        # 切换到登录iframe
-        driver.switch_to.frame(login_iframe)
-        time.sleep(1)
-    
-        # 切换到账号登录tab
-        account_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "//div[contains(@class, 'ep-tab_item')][.//div[text()='账号登录']]")))
-        account_tab.click()
-        time.sleep(1)
-    
-        # 勾选协议复选框
+    for retry in range(3):  # 重试3次
         try:
-            checkbox = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".ep-checkbox-container")))
-            checkbox.click()
-        except Exception:
-            pass
-        
-        # 输入账号
-        username_field = wait.until(EC.presence_of_element_located((By.ID, "login")))
-        username_field.clear()
-        for char in username:
-            username_field.send_keys(char)
-            time.sleep(0.1)
-        
-        # 输入密码
-        password_field = wait.until(EC.presence_of_element_located((By.ID, "password")))
-        password_field.clear()
-        for char in password:
-            password_field.send_keys(char)
-            time.sleep(0.1)
-        
-        # 点击登录按钮
-        login_button = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "ep-login_btn")))
-        login_button.click()
-        
-        # 处理滑块验证
-        handle_iframe_slider(driver, wait)
-        
-        # 处理手机验证码验证
-        time.sleep(2)
-        needs_phone_verification = driver.execute_script("""
-        var verifyInput = document.getElementById('yodaVerification');
-        var smsBtn = document.getElementById('yodaSmsCodeBtn');
-        var title = document.getElementById('yodaTitle');
-        
-        return (verifyInput !== null && smsBtn !== null) || 
-               (title !== null && title.textContent.includes('验证手机'));
-        """)
-        
-        if needs_phone_verification:
-            logger.info("检测到需要手机验证码验证")
-            handle_phone_verification(driver)
-        
-        # 返回主框架
-        driver.switch_to.default_content()
-        time.sleep(3)
-        
-        # 检查登录状态
-        login_success = False
-        try:
-            # 尝试通过URL判断是否登录成功
-            current_url = driver.current_url
-            if "selectorg" in current_url or "/web/rms-account/#/auth" not in current_url:
-                login_success = True
+            # 等待页面加载
+            time.sleep(5)  # 增加等待时间
             
-            # 尝试查找登录后常见的元素
-            if not login_success:
-                success_elements = driver.find_elements(By.CSS_SELECTOR, ".org-profile, .user-profile, .username, .logout")
-                if success_elements:
-                    login_success = True
-                    
-            # 检查本地存储和cookie中的令牌
-            if not login_success:
-                token_exists = driver.execute_script("""
-                return document.cookie.indexOf('token') > -1 || 
-                       document.cookie.indexOf('auth') > -1 ||
-                       window.localStorage.getItem('token') !== null;
-                """)
-                if token_exists:
-                    login_success = True
-        except Exception:
-            pass
+            # 查找登录iframe
+            logger.info("查找登录iframe...")
+            iframe_present = False
+            for iframe_retry in range(5):  # 尝试5次查找iframe
+                try:
+                    iframes = driver.find_elements(By.TAG_NAME, "iframe")
+                    if iframes:
+                        iframe_present = True
+                        logger.info(f"找到 {len(iframes)} 个iframe")
+                        break
+                    else:
+                        logger.warning(f"未找到iframe, 重试 {iframe_retry+1}/5")
+                        time.sleep(2)
+                except Exception as e:
+                    logger.warning(f"查找iframe出错: {e}")
+                    time.sleep(2)
+            
+            if not iframe_present:
+                logger.warning("未找到登录iframe，尝试刷新页面")
+                driver.refresh()
+                time.sleep(5)
+                continue
+            
+            login_iframe = wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
+            
+            # 切换到登录iframe
+            driver.switch_to.frame(login_iframe)
+            time.sleep(2)  # 增加等待时间
         
-        if login_success:
-            logger.info("登录成功")
-            # 添加额外的等待，确保所有会话数据都已保存
+            # 检查当前iframe是否包含登录表单
+            login_form_present = driver.execute_script("""
+                return document.getElementById('login') !== null || 
+                       document.querySelector('.ep-tab_item') !== null;
+            """)
+            
+            if not login_form_present:
+                logger.warning("当前iframe中未找到登录表单，尝试切换回主文档并重试")
+                driver.switch_to.default_content()
+                time.sleep(2)
+                continue
+        
+            # 切换到账号登录tab
+            try:
+                tab_elements = driver.find_elements(By.CSS_SELECTOR, ".ep-tab_item")
+                account_tab = None
+                
+                for tab in tab_elements:
+                    if "账号登录" in tab.text:
+                        account_tab = tab
+                        break
+                
+                if account_tab:
+                    logger.info("找到账号登录标签，点击切换")
+                    account_tab.click()
+                    time.sleep(2)
+                else:
+                    logger.warning("未找到账号登录标签，尝试使用默认登录方式")
+            except Exception as e:
+                logger.warning(f"切换到账号登录标签时出错: {e}")
+            
+            # 勾选协议复选框
+            try:
+                checkbox_elements = driver.find_elements(By.CSS_SELECTOR, ".ep-checkbox-container")
+                if checkbox_elements:
+                    logger.info("找到协议复选框，点击勾选")
+                    checkbox_elements[0].click()
+                    time.sleep(1)
+            except Exception as e:
+                logger.warning(f"勾选协议复选框时出错: {e}")
+            
+            # 输入账号
+            try:
+                username_field = wait.until(EC.presence_of_element_located((By.ID, "login")))
+                username_field.clear()
+                time.sleep(1)
+                for char in username:
+                    username_field.send_keys(char)
+                    time.sleep(0.1)
+                logger.info("已输入账号")
+            except Exception as e:
+                logger.error(f"输入账号时出错: {e}")
+                driver.switch_to.default_content()
+                continue
+            
+            # 输入密码
+            try:
+                password_field = wait.until(EC.presence_of_element_located((By.ID, "password")))
+                password_field.clear()
+                time.sleep(1)
+                for char in password:
+                    password_field.send_keys(char)
+                    time.sleep(0.1)
+                logger.info("已输入密码")
+            except Exception as e:
+                logger.error(f"输入密码时出错: {e}")
+                driver.switch_to.default_content()
+                continue
+            
+            # 点击登录按钮
+            try:
+                login_buttons = driver.find_elements(By.CSS_SELECTOR, ".ep-login_btn")
+                if login_buttons:
+                    logger.info("找到登录按钮，点击登录")
+                    login_buttons[0].click()
+                    time.sleep(3)  # 增加等待时间
+                else:
+                    # 尝试使用JavaScript点击
+                    logger.warning("未找到登录按钮，尝试使用JavaScript点击")
+                    driver.execute_script("""
+                        var buttons = document.querySelectorAll('button');
+                        for (var i = 0; i < buttons.length; i++) {
+                            if (buttons[i].textContent.includes('登录')) {
+                                buttons[i].click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    """)
+                    time.sleep(3)  # 增加等待时间
+            except Exception as e:
+                logger.error(f"点击登录按钮时出错: {e}")
+                driver.switch_to.default_content()
+                continue
+            
+            # 处理滑块验证
+            try:
+                logger.info("检查是否需要处理滑块验证...")
+                handle_iframe_slider(driver, wait)
+                time.sleep(2)  # 增加等待时间
+            except Exception as e:
+                logger.warning(f"处理滑块验证时出错: {e}")
+            
+            # 处理手机验证码验证
             time.sleep(2)
-            # 保存cookies
-            save_cookies(driver, cookies_file)
-            return True
-        else:
-            logger.warning("登录可能未成功，请检查页面状态")
-            return False
-    except Exception as e:
-        logger.error(f"登录过程出现异常: {e}")
-        return False
+            try:
+                needs_phone_verification = driver.execute_script("""
+                var verifyInput = document.getElementById('yodaVerification');
+                var smsBtn = document.getElementById('yodaSmsCodeBtn');
+                var title = document.getElementById('yodaTitle');
+                
+                return (verifyInput !== null && smsBtn !== null) || 
+                       (title !== null && title.textContent.includes('验证手机'));
+                """)
+                
+                if needs_phone_verification:
+                    logger.info("检测到需要手机验证码验证")
+                    handle_phone_verification(driver)
+                    time.sleep(2)  # 增加等待时间
+            except Exception as e:
+                logger.warning(f"检查手机验证码验证时出错: {e}")
+            
+            # 返回主框架
+            try:
+                driver.switch_to.default_content()
+                time.sleep(3)  # 增加等待时间
+            except Exception as e:
+                logger.warning(f"返回主框架时出错: {e}")
+            
+            # 检查登录状态
+            login_success = False
+            try:
+                # 先等待页面加载完成
+                time.sleep(5)  # 增加等待时间
+                
+                # 获取当前URL
+                current_url = driver.current_url
+                logger.info(f"登录后的当前URL: {current_url}")
+                
+                # 截取登录页面以便调试
+                try:
+                    screenshot_path = "/tmp/login_debug.png"
+                    driver.save_screenshot(screenshot_path)
+                    logger.info(f"保存了登录调试截图: {screenshot_path}")
+                except Exception as e:
+                    logger.warning(f"保存截图出错: {e}")
+                
+                # 尝试通过URL判断是否登录成功
+                if "selectorg" in current_url or "/web/rms-account/#/auth" not in current_url:
+                    login_success = True
+                    logger.info("基于URL判断登录成功")
+                
+                # 尝试查找登录后常见的元素
+                if not login_success:
+                    success_elements = driver.find_elements(By.CSS_SELECTOR, ".org-profile, .user-profile, .username, .logout")
+                    if success_elements:
+                        login_success = True
+                        logger.info(f"找到登录成功元素: {len(success_elements)}个")
+                        
+                # 检查本地存储和cookie中的令牌
+                if not login_success:
+                    token_exists = driver.execute_script("""
+                    return document.cookie.indexOf('token') > -1 || 
+                           document.cookie.indexOf('auth') > -1 ||
+                           window.localStorage.getItem('token') !== null;
+                    """)
+                    if token_exists:
+                        login_success = True
+                        logger.info("通过cookie/localStorage令牌判断登录成功")
+                
+                # 使用JavaScript检查是否成功
+                if not login_success:
+                    js_check = driver.execute_script("""
+                    // 检查URL
+                    if (window.location.href.indexOf('selectorg') > -1) return true;
+                    
+                    // 检查DOM元素
+                    var profileElements = document.querySelectorAll('.org-profile, .user-profile, .username, .logout');
+                    if (profileElements.length > 0) return true;
+                    
+                    // 检查是否不在登录页
+                    var loginForm = document.querySelector('#login, .ep-login_btn');
+                    return loginForm === null;
+                    """)
+                    
+                    if js_check:
+                        login_success = True
+                        logger.info("通过JavaScript检查判断登录成功")
+            except Exception as e:
+                logger.error(f"检查登录状态时出错: {e}")
+                
+            if login_success:
+                logger.info("登录成功")
+                return True
+            else:
+                logger.warning(f"第{retry+1}次登录尝试未成功，准备重试")
+                driver.refresh()
+                time.sleep(5)  # 增加等待时间
+        except Exception as e:
+            logger.error(f"登录过程中出现异常: {e}")
+            try:
+                driver.switch_to.default_content()
+                time.sleep(2)
+                driver.refresh()
+                time.sleep(5)
+            except:
+                pass
+    
+    logger.error("多次尝试登录失败")
+    return False
 
 
 def select_organization(driver, wait, target_org):
