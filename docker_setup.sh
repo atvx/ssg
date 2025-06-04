@@ -93,7 +93,7 @@ fi
 
 echo
 echo "使用以下命令查看服务日志："
-echo "API服务日志: docker-compose logs -f api"
-echo "Celery Worker日志: docker-compose logs -f celery_worker"
+echo "API服务日志: docker compose logs -f api"
+echo "Celery Worker日志: docker compose logs -f celery_worker"
 echo
 echo "感谢使用销售数据获取系统！" 
