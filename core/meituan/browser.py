@@ -24,6 +24,20 @@ def init_chrome_driver(config, force_new_session=False):
     # 添加以下代码，处理无头模式
     if config.get("HEADLESS", False):
         chrome_options.add_argument("--headless=new")  # 使用新的headless模式
+        # 添加解决DevToolsActivePort问题的参数
+        chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--no-sandbox")
+        # 禁用GPU相关功能
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        # 临时目录权限问题
+        data_dir = "/tmp/chrome_tmp"
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir, exist_ok=True)
+        chrome_options.add_argument(f"--user-data-dir={data_dir}")
+        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+        chrome_options.add_argument("--disable-extensions")
         print("启用无头模式运行Chrome")
     
     chrome_options.add_argument(
@@ -33,7 +47,7 @@ def init_chrome_driver(config, force_new_session=False):
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     
     # 使用用户数据目录保持登录状态
-    use_user_data_dir = not force_new_session
+    use_user_data_dir = not force_new_session and not config.get("HEADLESS", False)
     if use_user_data_dir:
         try:
             # 检查默认用户数据目录是否存在
@@ -112,6 +126,23 @@ def init_chrome_driver(config, force_new_session=False):
                 chrome_options.add_argument("--disable-dev-shm-usage")
                 chrome_options.add_argument("--disable-gpu")
                 chrome_options.add_argument("--window-size=1920,1080")
+                if config.get("HEADLESS", False):
+                    chrome_options.add_argument("--headless=new")
+                    # 添加解决DevToolsActivePort问题的参数
+                    chrome_options.add_argument("--remote-debugging-port=9222")
+                    chrome_options.add_argument("--disable-dev-shm-usage")
+                    chrome_options.add_argument("--no-sandbox")
+                    # 禁用GPU相关功能
+                    chrome_options.add_argument("--disable-gpu")
+                    chrome_options.add_argument("--disable-software-rasterizer")
+                    # 临时目录权限问题
+                    data_dir = "/tmp/chrome_tmp"
+                    if not os.path.exists(data_dir):
+                        os.makedirs(data_dir, exist_ok=True)
+                    chrome_options.add_argument(f"--user-data-dir={data_dir}")
+                    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+                    chrome_options.add_argument("--disable-extensions")
+                
                 chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
                 chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 chrome_options.add_experimental_option("useAutomationExtension", False)

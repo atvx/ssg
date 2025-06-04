@@ -67,7 +67,12 @@ echo "=== 2. 创建Chrome用户数据目录 ==="
 mkdir -p chrome_user_data
 chmod 777 chrome_user_data
 
-echo "=== 3. 构建和启动Docker服务 ==="
+# 创建Chrome临时目录
+echo "=== 3. 创建Chrome临时文件目录 ==="
+mkdir -p /tmp/chrome_tmp
+chmod 777 /tmp/chrome_tmp
+
+echo "=== 4. 构建和启动Docker服务 ==="
 if command -v docker-compose &> /dev/null; then
     docker-compose build
     docker-compose up -d
@@ -79,7 +84,7 @@ else
     exit 1
 fi
 
-echo "=== 4. 部署完成 ==="
+echo "=== 5. 部署完成 ==="
 echo "服务已启动，API文档地址: http://localhost:8000/docs"
 echo
 

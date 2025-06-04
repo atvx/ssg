@@ -26,6 +26,8 @@ services:
       - ./chrome_user_data:/app/chrome_user_data
       # 添加/dev/shm卷映射
       - /dev/shm:/dev/shm
+      # 临时目录映射到容器外部
+      - /tmp/chrome_tmp:/tmp/chrome_tmp
       # 添加selenium_setup.py
       - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
     environment:
@@ -72,6 +74,8 @@ services:
       - ./chrome_user_data:/app/chrome_user_data
       # 添加/dev/shm卷映射
       - /dev/shm:/dev/shm
+      # 临时目录映射到容器外部
+      - /tmp/chrome_tmp:/tmp/chrome_tmp
       # 添加selenium_setup.py
       - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
     environment:
