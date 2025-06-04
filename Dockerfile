@@ -51,39 +51,41 @@ ENV LANG=zh_CN.UTF-8 \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8
 
-# 安装Chromium和ChromeDriver (适用于ARM64架构的Debian)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
-    chromium-driver \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# 下载和安装Chrome和ChromeDriver (AMD64架构)
+RUN wget -q --no-verbose -O /tmp/chrome-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/linux64/chrome-linux64.zip" \
+    && wget -q --no-verbose -O /tmp/chromedriver-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/linux64/chromedriver-linux64.zip" \
+    && unzip /tmp/chrome-linux64.zip -d /opt/ \
+    && unzip /tmp/chromedriver-linux64.zip -d /opt/ \
+    && rm /tmp/chrome-linux64.zip /tmp/chromedriver-linux64.zip \
+    && chmod +x /opt/chrome-linux64/chrome \
+    && chmod +x /opt/chromedriver-linux64/chromedriver
 
 # 下载和安装geckodriver (Firefox WebDriver)
 RUN GECKODRIVER_VERSION="v0.33.0" \
-    && wget -q --no-verbose -O /tmp/geckodriver.tar.gz "https://github.com/mozilla/geckodriver/releases/download/${GECKODRIVER_VERSION}/geckodriver-${GECKODRIVER_VERSION}-linux-aarch64.tar.gz" \
+    && wget -q --no-verbose -O /tmp/geckodriver.tar.gz "https://github.com/mozilla/geckodriver/releases/download/${GECKODRIVER_VERSION}/geckodriver-${GECKODRIVER_VERSION}-linux64.tar.gz" \
     && tar -xzf /tmp/geckodriver.tar.gz -C /usr/local/bin/ \
     && rm /tmp/geckodriver.tar.gz \
     && chmod +x /usr/local/bin/geckodriver
 
 # 创建Chrome软链接，避免修改业务代码
-RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome && \
-    ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable && \
-    ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver && \
-    chmod +x /usr/bin/chromedriver
+RUN ln -sf /opt/chrome-linux64/chrome /usr/bin/google-chrome && \
+    ln -sf /opt/chrome-linux64/chrome /usr/bin/google-chrome-stable && \
+    ln -sf /opt/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
+    chmod +x /usr/local/bin/chromedriver
 
 # 创建目录以支持Chrome在沙盒模式下运行
 RUN mkdir -p /var/run/chrome && \
     chmod -R 777 /var/run/chrome
 
 # 设置Chrome/Chromium环境变量
-ENV CHROME_BIN=/usr/bin/chromium \
-    CHROMIUM_PATH=/usr/bin/chromium \
-    CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+ENV CHROME_BIN=/usr/bin/google-chrome \
+    CHROMIUM_PATH=/usr/bin/google-chrome \
+    CHROMEDRIVER_PATH=/usr/local/bin/chromedriver \
     GECKODRIVER_PATH=/usr/local/bin/geckodriver \
     FIREFOX_BIN=/usr/bin/firefox-esr \
     PATH="/usr/local/bin:/usr/bin:${PATH}" \
-    SELENIUM_DRIVER_PATH="/usr/bin/chromedriver" \
-    SELENIUM_BROWSER_BINARY="/usr/bin/chromium" \
+    SELENIUM_DRIVER_PATH="/usr/local/bin/chromedriver" \
+    SELENIUM_BROWSER_BINARY="/usr/bin/google-chrome" \
     # 添加Chrome默认启动参数，以适应Docker环境
     CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars"
 

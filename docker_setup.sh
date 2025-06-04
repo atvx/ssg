@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 销售数据获取系统 - Docker部署脚本
-# 适用于Ubuntu 22.04.5 LTS aarch64架构
+# 适用于Linux x86_64/AMD64架构
 
 set -e
 
