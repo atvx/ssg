@@ -27,10 +27,21 @@ DATABASE_URL=mysql+pymysql://qian:qian163@124.221.92.150:3306/ssgmlj
 
 # Redis配置
 REDIS_URL=redis://:163000@124.221.92.150:6378/0
+# Redis连接参数
+REDIS_SOCKET_TIMEOUT=60
+REDIS_SOCKET_CONNECT_TIMEOUT=30
+REDIS_SOCKET_KEEPALIVE=True
+REDIS_RETRY_ON_TIMEOUT=True
+REDIS_MAX_CONNECTIONS=20
 
 # Celery配置
 CELERY_BROKER_URL=redis://:163000@124.221.92.150:6378/0
 CELERY_RESULT_BACKEND=redis://:163000@124.221.92.150:6378/0
+CELERY_BROKER_CONNECTION_TIMEOUT=60
+CELERY_BROKER_CONNECTION_MAX_RETRIES=10
+CELERY_BROKER_HEARTBEAT=30
+CELERY_BROKER_POOL_LIMIT=10
+CELERY_VISIBILITY_TIMEOUT=43200
 
 # 美团POS配置
 MEITUAN_PHONE=13884950903
@@ -59,7 +70,28 @@ EOF
     echo "请编辑.env文件，然后继续..."
     read -p "按回车键继续..." KEY
 else
-    echo ".env文件已存在，跳过创建步骤。"
+    echo ".env文件已存在，更新Redis和Celery连接参数..."
+    # 添加或更新Redis连接参数
+    if ! grep -q "REDIS_SOCKET_TIMEOUT" .env; then
+        echo "" >> .env
+        echo "# Redis连接参数" >> .env
+        echo "REDIS_SOCKET_TIMEOUT=60" >> .env
+        echo "REDIS_SOCKET_CONNECT_TIMEOUT=30" >> .env
+        echo "REDIS_SOCKET_KEEPALIVE=True" >> .env
+        echo "REDIS_RETRY_ON_TIMEOUT=True" >> .env
+        echo "REDIS_MAX_CONNECTIONS=20" >> .env
+    fi
+    
+    # 添加或更新Celery连接参数
+    if ! grep -q "CELERY_BROKER_CONNECTION_TIMEOUT" .env; then
+        echo "" >> .env
+        echo "# Celery连接参数" >> .env
+        echo "CELERY_BROKER_CONNECTION_TIMEOUT=60" >> .env
+        echo "CELERY_BROKER_CONNECTION_MAX_RETRIES=10" >> .env
+        echo "CELERY_BROKER_HEARTBEAT=30" >> .env
+        echo "CELERY_BROKER_POOL_LIMIT=10" >> .env
+        echo "CELERY_VISIBILITY_TIMEOUT=43200" >> .env
+    fi
 fi
 
 # 确保chrome_user_data目录存在
@@ -91,7 +123,41 @@ chmod +x sync_time.sh
 echo "=== 5. 创建定时同步任务 ==="
 (crontab -l 2>/dev/null || echo "") | grep -v "sync_time.sh" | { cat; echo "*/10 * * * * $(pwd)/sync_time.sh >> $(pwd)/time_sync.log 2>&1"; } | crontab -
 
-echo "=== 6. 构建和启动Docker服务 ==="
+# 创建Redis连接检查脚本
+echo "=== 6. 创建Redis连接监控脚本 ==="
+cat > redis_monitor.sh << EOF
+#!/bin/bash
+# Redis连接监控脚本
+# 检查Redis连接并在必要时重启服务
+
+REDIS_HOST=\$(grep -o '@[^:]*' .env | grep -o '[^@]*' | head -1)
+REDIS_PORT=\$(grep -o ':[0-9]*/' .env | grep -o '[0-9]*' | head -1)
+
+echo "\$(date '+%Y-%m-%d %H:%M:%S') 开始检查Redis连接: \${REDIS_HOST}:\${REDIS_PORT}"
+
+# 测试Redis连接
+nc -z -w5 \${REDIS_HOST} \${REDIS_PORT}
+RESULT=\$?
+
+if [ \$RESULT -ne 0 ]; then
+    echo "\$(date '+%Y-%m-%d %H:%M:%S') Redis连接失败，重启服务..."
+    
+    # 停止并重启服务
+    cd \$(dirname \$0)
+    docker-compose restart api celery_worker
+    
+    echo "\$(date '+%Y-%m-%d %H:%M:%S') 服务已重启"
+else
+    echo "\$(date '+%Y-%m-%d %H:%M:%S') Redis连接正常"
+fi
+EOF
+
+chmod +x redis_monitor.sh
+
+# 添加Redis连接监控定时任务
+(crontab -l 2>/dev/null || echo "") | grep -v "redis_monitor.sh" | { cat; echo "*/15 * * * * $(pwd)/redis_monitor.sh >> $(pwd)/redis_monitor.log 2>&1"; } | crontab -
+
+echo "=== 7. 构建和启动Docker服务 ==="
 # 检查是否安装了Docker Compose
 if command -v docker-compose &> /dev/null; then
     COMPOSE_CMD="docker-compose"
@@ -111,7 +177,7 @@ $COMPOSE_CMD build --no-cache
 # 启动服务
 $COMPOSE_CMD up -d
 
-echo "=== 7. 部署完成 ==="
+echo "=== 8. 部署完成 ==="
 echo "服务已启动，API文档地址: http://localhost:3400/docs"
 echo
 

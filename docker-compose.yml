@@ -58,11 +58,20 @@ services:
       - SE_OPTS=--disable-dev-shm-usage
       - WDM_LOG_LEVEL=0
       - WDM_SSL_VERIFY=0
+      # 添加Redis连接参数
+      - REDIS_SOCKET_TIMEOUT=60
+      - REDIS_SOCKET_CONNECT_TIMEOUT=30
+      - REDIS_SOCKET_KEEPALIVE=True
+      - REDIS_RETRY_ON_TIMEOUT=True
+      - REDIS_MAX_CONNECTIONS=20
       # 增加Celery的超时设置
       - CELERY_TASK_TIME_LIMIT=600
       - CELERY_TASK_SOFT_TIME_LIMIT=500
-      - CELERY_BROKER_CONNECTION_TIMEOUT=30
-      - CELERY_BROKER_HEARTBEAT=10
+      - CELERY_BROKER_CONNECTION_TIMEOUT=60
+      - CELERY_BROKER_CONNECTION_MAX_RETRIES=10
+      - CELERY_BROKER_HEARTBEAT=30
+      - CELERY_BROKER_POOL_LIMIT=10
+      - CELERY_VISIBILITY_TIMEOUT=43200
       - TZ=Asia/Shanghai
       # 添加hostname固定值
       - CELERY_HOSTNAME=ssg-api
@@ -137,11 +146,20 @@ services:
       - SE_OPTS=--disable-dev-shm-usage
       - WDM_LOG_LEVEL=0
       - WDM_SSL_VERIFY=0
+      # 添加Redis连接参数
+      - REDIS_SOCKET_TIMEOUT=60
+      - REDIS_SOCKET_CONNECT_TIMEOUT=30
+      - REDIS_SOCKET_KEEPALIVE=True
+      - REDIS_RETRY_ON_TIMEOUT=True
+      - REDIS_MAX_CONNECTIONS=20
       # 增加Celery的超时设置
       - CELERY_TASK_TIME_LIMIT=600
       - CELERY_TASK_SOFT_TIME_LIMIT=500
-      - CELERY_BROKER_CONNECTION_TIMEOUT=30
-      - CELERY_BROKER_HEARTBEAT=10
+      - CELERY_BROKER_CONNECTION_TIMEOUT=60
+      - CELERY_BROKER_CONNECTION_MAX_RETRIES=10
+      - CELERY_BROKER_HEARTBEAT=30
+      - CELERY_BROKER_POOL_LIMIT=10
+      - CELERY_VISIBILITY_TIMEOUT=43200
       - TZ=Asia/Shanghai
       # 添加hostname固定值
       - CELERY_HOSTNAME=ssg-worker
@@ -151,7 +169,7 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    command: bash -c "pip install retry tenacity timeout-decorator && celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h"
+    command: bash -c "pip install retry tenacity timeout-decorator && celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --without-heartbeat --without-gossip"
     depends_on:
       api:
         condition: service_healthy

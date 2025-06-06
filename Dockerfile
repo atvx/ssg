@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     htop \
     net-tools \
+    netcat-openbsd \
     # 添加更多依赖以解决Chrome崩溃问题
     libnss3 \
     libnspr4 \
@@ -107,6 +108,13 @@ ENV CHROME_BIN=/usr/bin/google-chrome \
 # 设置Xvfb（虚拟显示服务器）
 ENV DISPLAY=:99
 
+# 设置Redis连接配置
+ENV REDIS_SOCKET_TIMEOUT=60 \
+    REDIS_SOCKET_CONNECT_TIMEOUT=30 \
+    REDIS_SOCKET_KEEPALIVE=True \
+    REDIS_RETRY_ON_TIMEOUT=True \
+    REDIS_MAX_CONNECTIONS=20
+
 # 复制依赖文件
 COPY requirements.txt .
 
@@ -117,9 +125,13 @@ RUN pip install --no-cache-dir -r requirements.txt \
     # 添加更多超时处理库
     && pip install --no-cache-dir retry timeout-decorator requests-toolbelt tenacity
 
-# 复制Selenium设置脚本
+# 复制Selenium和Redis设置脚本
 COPY selenium_setup.py /usr/local/bin/selenium_setup.py
-RUN chmod +x /usr/local/bin/selenium_setup.py
+COPY redis_config.py /usr/local/bin/redis_config.py
+COPY redis_setup.py /usr/local/bin/redis_setup.py
+RUN chmod +x /usr/local/bin/selenium_setup.py && \
+    chmod +x /usr/local/bin/redis_config.py && \
+    chmod +x /usr/local/bin/redis_setup.py
 
 # 创建一个wrapper脚本来设置环境
 RUN echo '#!/bin/bash\n\
@@ -136,6 +148,8 @@ mkdir -p /tmp/chrome_tmp\n\
 chmod -R 777 /tmp/chrome_tmp\n\
 # 运行Selenium设置脚本\n\
 python /usr/local/bin/selenium_setup.py\n\
+# 运行Redis配置脚本\n\
+python /usr/local/bin/redis_setup.py\n\
 # 设置环境变量\n\
 export PYTHONPATH=/app\n\
 export CHROME_OPTIONS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"\n\
