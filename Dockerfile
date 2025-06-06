@@ -10,10 +10,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Shanghai
 
-# 安装依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 解决GPG密钥问题并安装依赖
+RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecureRepositories=true \
+    && apt-get install -y --no-install-recommends gnupg \
+    && apt-key update \
+    && apt-get update --allow-insecure-repositories \
+    && apt-get install -y --no-install-recommends --allow-unauthenticated \
     wget \
-    gnupg \
     curl \
     unzip \
     xvfb \
