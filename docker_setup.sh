@@ -144,7 +144,7 @@ if [ \$RESULT -ne 0 ]; then
     
     # 停止并重启服务
     cd \$(dirname \$0)
-    docker-compose restart api celery_worker
+    docker compose restart api celery_worker
     
     echo "\$(date '+%Y-%m-%d %H:%M:%S') 服务已重启"
 else
@@ -158,23 +158,33 @@ chmod +x redis_monitor.sh
 (crontab -l 2>/dev/null || echo "") | grep -v "redis_monitor.sh" | { cat; echo "*/15 * * * * $(pwd)/redis_monitor.sh >> $(pwd)/redis_monitor.log 2>&1"; } | crontab -
 
 echo "=== 7. 构建和启动Docker服务 ==="
-# 检查是否安装了Docker Compose
-if command -v docker-compose &> /dev/null; then
-    COMPOSE_CMD="docker-compose"
-elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+# 检测Docker Compose命令格式
+if command -v docker &> /dev/null && docker compose version &> /dev/null; then
     COMPOSE_CMD="docker compose"
+elif command -v docker-compose &> /dev/null; then
+    COMPOSE_CMD="docker-compose"
 else
-    echo "未找到docker-compose命令，请确保Docker和Docker Compose已安装。"
+    echo "未找到docker compose命令，请确保Docker和Docker Compose已安装。"
     exit 1
 fi
 
-# 停止并移除现有容器
-$COMPOSE_CMD down -v
+echo "使用的Docker Compose命令: $COMPOSE_CMD"
+
+# 检查当前是否有容器在运行
+if $COMPOSE_CMD ps -q &>/dev/null; then
+    # 停止现有容器
+    echo "停止并移除现有容器..."
+    $COMPOSE_CMD down || true
+else
+    echo "没有发现运行中的容器..."
+fi
 
 # 强制重建镜像
+echo "构建Docker镜像..."
 $COMPOSE_CMD build --no-cache
 
 # 启动服务
+echo "启动服务..."
 $COMPOSE_CMD up -d
 
 echo "=== 8. 部署完成 ==="
