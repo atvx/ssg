@@ -72,7 +72,7 @@ def save_sales_records(records, platform, date_str):
 
 
 @celery_app.task(bind=True)
-def fetch_meituan_task(self, task_id: int, date: str = None):
+def fetch_meituan_task(self, task_id: int, date: str = None, user_id: int = None):
     """获取美团数据的后台任务"""
     # 确保在函数内部可以访问datetime
     from datetime import datetime
@@ -90,10 +90,11 @@ def fetch_meituan_task(self, task_id: int, date: str = None):
         # 获取任务对象，以便获取用户ID
         from db.crud import get_task
         task = get_task(db, task_id)
-        user_id = task.user_id if task else None
+        # 如果提供了user_id参数，优先使用它，否则使用任务中的用户ID
+        task_user_id = user_id or (task.user_id if task else None)
         
         # 获取美团数据
-        data = fetch_meituan_data(db, date, user_id)
+        data = fetch_meituan_data(db, date, task_user_id)
         update_task_status(task_id, "running", 50)
         
         # 检查是否获取成功
@@ -117,7 +118,7 @@ def fetch_meituan_task(self, task_id: int, date: str = None):
 
 
 @celery_app.task(bind=True)
-def fetch_duowei_task(self, task_id: int, date: str = None):
+def fetch_duowei_task(self, task_id: int, date: str = None, user_id: int = None):
     """获取多维数据的后台任务"""
     # 确保在函数内部可以访问datetime
     from datetime import datetime
@@ -154,7 +155,7 @@ def fetch_duowei_task(self, task_id: int, date: str = None):
 
 
 @celery_app.task(bind=True)
-def fetch_all_data_task(self, task_id: int, date: str = None):
+def fetch_all_data_task(self, task_id: int, date: str = None, user_id: int = None):
     """获取所有平台数据的后台任务"""
     # 确保在函数内部可以访问datetime
     from datetime import datetime
@@ -169,11 +170,12 @@ def fetch_all_data_task(self, task_id: int, date: str = None):
         from db.crud import get_task
         db = next(get_db())
         task = get_task(db, task_id)
-        user_id = task.user_id if task else None
+        # 如果提供了user_id参数，优先使用它，否则使用任务中的用户ID
+        task_user_id = user_id or (task.user_id if task else None)
         
         # 获取美团数据
         from services.meituan_service import fetch_meituan_data
-        meituan_result = fetch_meituan_data(db, date, user_id)
+        meituan_result = fetch_meituan_data(db, date, task_user_id)
         update_task_status(task_id, "running", 40)
         
         # 获取多维数据
