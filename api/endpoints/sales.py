@@ -22,30 +22,35 @@ from utils.security import get_current_active_user, get_current_superuser
 from schemas.user import User
 from schemas.response import APIResponse, StatusCode, ErrorType
 from services.sales_service import get_all_sales_data, get_sales_data_by_date
+from services.meituan_service import fetch_meituan_data
+from services.duowei_service import fetch_duowei_data
 from utils.response_utils import create_success_response, create_error_response
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/fetch", summary="数据同步任务")
+@router.get("/fetch", summary="数据同步任务（支持同步/异步模式）")
 def fetch_data_get(
     date: Optional[str] = None,
     platform: Optional[str] = None,
     user_id: Optional[int] = None,
+    sync: bool = Query(False, description="是否同步执行（true=同步返回结果，false=异步执行返回任务信息）"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    数据同步任务
+    数据同步任务（支持同步/异步两种执行模式）
     
     参数:
     - date: 查询日期（格式 YYYY-MM-DD），为空时默认为当前日期
     - platform: 指定获取数据的平台，不指定则获取所有平台数据，可选
     - user_id: 指定用户ID，可选
+    - sync: 执行模式（true=同步执行立即返回结果，false=异步执行返回任务信息），默认false
     
     返回:
-    - 创建的数据同步任务信息
+    - sync=true: 直接返回数据结果
+    - sync=false: 返回任务信息，需要通过任务状态API查询结果
     """
     try:
         try:
@@ -92,31 +97,112 @@ def fetch_data_get(
                     }]
                 )
             
-            # 根据请求的平台创建不同类型的任务
-            task = None
-            if not platform:
-                # 获取所有平台数据
-                task = create_task(db, TaskCreate(task_type="fetch_all"), current_user.id)
-                fetch_all_data_task.delay(task.id, date_str, user_id)
-            elif platform == "meituan":
-                # 只获取美团数据
-                task = create_task(db, TaskCreate(task_type="fetch_meituan"), current_user.id)
-                fetch_meituan_task.delay(task.id, date_str, user_id)
-            elif platform == "duowei":
-                # 只获取多维数据
-                task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
-                fetch_duowei_task.delay(task.id, date_str, user_id)
-            
-            return create_success_response(
-                message=f"已启动{platform if platform else '全平台'}数据同步任务",
-                data={
-                    "task_id": task.id,
-                    "status": task.status,
-                    "created_at": task.created_at.isoformat() if task.created_at else None,
-                    "date": date_str,
-                    "user_id": user_id
-                }
-            )
+            # 根据执行模式选择同步或异步执行
+            if sync:
+                # 同步执行模式 - 直接调用服务函数并返回结果
+                logger.info(f"同步模式: 开始获取{platform if platform else '全平台'}数据")
+                
+                if not platform:
+                    # 获取所有平台数据
+                    meituan_result = fetch_meituan_data(db, date_str, user_id)
+                    duowei_result = fetch_duowei_data(date_str)
+                    
+                    # 合并结果
+                    all_data = {
+                        "success": meituan_result.get("success", False) or duowei_result.get("success", False),
+                        "message": "数据获取完成",
+                        "date": date_str,
+                        "execution_mode": "sync",
+                        "platforms": {
+                            "meituan": {
+                                "success": meituan_result.get("success", False),
+                                "message": meituan_result.get("message", ""),
+                                "data": meituan_result.get("data", [])
+                            },
+                            "duowei": {
+                                "success": duowei_result.get("success", False),
+                                "message": duowei_result.get("message", ""),
+                                "data": duowei_result.get("data", [])
+                            }
+                        }
+                    }
+                    
+                    return create_success_response(
+                        message="全平台数据获取完成",
+                        data=all_data
+                    )
+                    
+                elif platform == "meituan":
+                    # 只获取美团数据
+                    result = fetch_meituan_data(db, date_str, user_id)
+                    result["execution_mode"] = "sync"
+                    
+                    if result.get("success", False):
+                        return create_success_response(
+                            message="美团数据获取成功",
+                            data=result
+                        )
+                    else:
+                        return create_error_response(
+                            message=f"美团数据获取失败: {result.get('message', '未知错误')}",
+                            error_type=ErrorType.SERVER_ERROR,
+                            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            details=[{
+                                "field": "meituan_service",
+                                "message": result.get("message", "未知错误")
+                            }]
+                        )
+                        
+                elif platform == "duowei":
+                    # 只获取多维数据
+                    result = fetch_duowei_data(date_str)
+                    result["execution_mode"] = "sync"
+                    
+                    if result.get("success", False):
+                        return create_success_response(
+                            message="多维数据获取成功",
+                            data=result
+                        )
+                    else:
+                        return create_error_response(
+                            message=f"多维数据获取失败: {result.get('message', '未知错误')}",
+                            error_type=ErrorType.SERVER_ERROR,
+                            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            details=[{
+                                "field": "duowei_service",
+                                "message": result.get("message", "未知错误")
+                            }]
+                        )
+            else:
+                # 异步执行模式 - 使用Celery任务队列
+                logger.info(f"异步模式: 创建{platform if platform else '全平台'}数据同步任务")
+                
+                task = None
+                if not platform:
+                    # 获取所有平台数据
+                    task = create_task(db, TaskCreate(task_type="fetch_all"), current_user.id)
+                    fetch_all_data_task.delay(task.id, date_str, user_id)
+                elif platform == "meituan":
+                    # 只获取美团数据
+                    task = create_task(db, TaskCreate(task_type="fetch_meituan"), current_user.id)
+                    fetch_meituan_task.delay(task.id, date_str, user_id)
+                elif platform == "duowei":
+                    # 只获取多维数据
+                    task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
+                    fetch_duowei_task.delay(task.id, date_str, user_id)
+                
+                return create_success_response(
+                    message=f"已启动{platform if platform else '全平台'}数据同步任务",
+                    data={
+                        "task_id": task.id,
+                        "status": task.status,
+                        "created_at": task.created_at.isoformat() if task.created_at else None,
+                        "date": date_str,
+                        "user_id": user_id,
+                        "execution_mode": "async",
+                        "status_check_url": f"/api/tasks/status/{task.id}"
+                    }
+                )
         except ValueError as e:
             return create_error_response(
                 message=str(e),
