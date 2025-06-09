@@ -11,13 +11,14 @@ from config.settings import settings
 REDIS_POOL = ConnectionPool.from_url(
     settings.REDIS_URL,
     decode_responses=True,  # 自动解码为字符串
-    max_connections=10,     # 最大连接数
-    socket_timeout=5,       # socket 超时时间
-    socket_connect_timeout=2,  # 连接超时时间
+    max_connections=20,     # 增加最大连接数
+    socket_timeout=60,      # 增加socket超时时间到60秒
+    socket_connect_timeout=10,  # 增加连接超时时间到10秒
     socket_keepalive=True,    # 保持连接
-    health_check_interval=30,  # 健康检查间隔
+    socket_keepalive_options={"TCP_KEEPIDLE": 1, "TCP_KEEPINTVL": 3, "TCP_KEEPCNT": 5},  # TCP保活参数
+    health_check_interval=60,  # 健康检查间隔改为60秒
     retry_on_timeout=True,    # 超时时重试
-    retry_on_error=[redis.exceptions.ConnectionError]  # 连接错误时重试
+    retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]  # 连接和超时错误时重试
 )
 
 # Redis客户端

@@ -177,32 +177,32 @@ def fetch_data_get(
                 # 异步执行模式 - 使用Celery任务队列
                 logger.info(f"异步模式: 创建{platform if platform else '全平台'}数据同步任务")
                 
-                task = None
-                if not platform:
-                    # 获取所有平台数据
-                    task = create_task(db, TaskCreate(task_type="fetch_all"), current_user.id)
-                    fetch_all_data_task.delay(task.id, date_str, user_id)
-                elif platform == "meituan":
-                    # 只获取美团数据
-                    task = create_task(db, TaskCreate(task_type="fetch_meituan"), current_user.id)
-                    fetch_meituan_task.delay(task.id, date_str, user_id)
-                elif platform == "duowei":
-                    # 只获取多维数据
-                    task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
-                    fetch_duowei_task.delay(task.id, date_str, user_id)
-                
-                return create_success_response(
-                    message=f"已启动{platform if platform else '全平台'}数据同步任务",
-                    data={
-                        "task_id": task.id,
-                        "status": task.status,
-                        "created_at": task.created_at.isoformat() if task.created_at else None,
-                        "date": date_str,
+            task = None
+            if not platform:
+                # 获取所有平台数据
+                task = create_task(db, TaskCreate(task_type="fetch_all"), current_user.id)
+                fetch_all_data_task.delay(task.id, date_str, user_id)
+            elif platform == "meituan":
+                # 只获取美团数据
+                task = create_task(db, TaskCreate(task_type="fetch_meituan"), current_user.id)
+                fetch_meituan_task.delay(task.id, date_str, user_id)
+            elif platform == "duowei":
+                # 只获取多维数据
+                task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
+                fetch_duowei_task.delay(task.id, date_str, user_id)
+            
+            return create_success_response(
+                message=f"已启动{platform if platform else '全平台'}数据同步任务",
+                data={
+                    "task_id": task.id,
+                    "status": task.status,
+                    "created_at": task.created_at.isoformat() if task.created_at else None,
+                    "date": date_str,
                         "user_id": user_id,
                         "execution_mode": "async",
                         "status_check_url": f"/api/tasks/status/{task.id}"
-                    }
-                )
+                }
+            )
         except ValueError as e:
             return create_error_response(
                 message=str(e),
