@@ -24,6 +24,9 @@ from sqlalchemy.orm import Session
 from utils.redis_utils import VerificationManager
 from db.database import get_db, SessionLocal
 from models.user import User
+from db.crud import create_or_update_sales_record
+from schemas.sales import SalesRecordCreate
+from datetime import datetime
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -280,12 +283,49 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
                 task_result["message"] = f"查询销售数据时出错: {str(e)}"
                 return task_result
         
+        # 保存数据到数据库
+        saved_count = 0
+        try:
+            if sales_results:
+                logger.info(f"开始保存美团数据到数据库，共 {len(sales_results)} 条记录")
+                query_date_obj = datetime.strptime(query_date, "%Y-%m-%d").date()
+                
+                for record in sales_results:
+                    try:
+                        # 计算平均收入
+                        sales_count = record.get("salesCartCount", 0)
+                        income_amt = record.get("incomeAmt", 0)
+                        avg_income_amt = income_amt / sales_count if sales_count > 0 else 0
+                        
+                        # 创建销售记录对象
+                        sales_record = SalesRecordCreate(
+                            date=query_date_obj,
+                            platform="meituan",
+                            warehouse_name=record.get("name", ""),
+                            income_amt=income_amt,
+                            sales_cart_count=sales_count,
+                            avg_income_amt=avg_income_amt
+                        )
+                        
+                        # 保存到数据库
+                        create_or_update_sales_record(db, sales_record)
+                        saved_count += 1
+                        
+                    except Exception as e:
+                        logger.error(f"保存单条美团记录失败: {e}, 记录: {record}")
+                        continue
+                
+                logger.info(f"美团数据保存完成，成功保存 {saved_count}/{len(sales_results)} 条记录")
+                
+        except Exception as e:
+            logger.error(f"保存美团数据到数据库失败: {e}")
+            # 即使保存失败，也返回获取到的数据
+        
         # 成功返回
         task_result["success"] = True
-        task_result["message"] = "数据获取成功"
+        task_result["message"] = f"数据获取成功，已保存 {saved_count} 条记录到数据库"
         task_result["data"] = sales_results
         
-        print(task_result)
         return task_result
         
     except Exception as e:

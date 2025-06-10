@@ -131,7 +131,8 @@ def fetch_duowei_task(self, task_id: int, date: str = None, user_id: int = None)
         
         # 获取数据
         from services.duowei_service import fetch_duowei_data
-        result = fetch_duowei_data(date)
+        db = next(get_db())
+        result = fetch_duowei_data(date, db)
         update_task_status(task_id, "running", 50)
         
         # 检查是否获取成功
@@ -180,7 +181,7 @@ def fetch_all_data_task(self, task_id: int, date: str = None, user_id: int = Non
         
         # 获取多维数据
         from services.duowei_service import fetch_duowei_data
-        duowei_result = fetch_duowei_data(date)
+        duowei_result = fetch_duowei_data(date, db)
         update_task_status(task_id, "running", 70)
         
         # 获取数据列表
