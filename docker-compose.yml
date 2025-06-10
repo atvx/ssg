@@ -79,7 +79,7 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120
+    command: bash -c "pip install backoff==2.2.1 && uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120"
     networks:
       - ssg-network
     # 添加健康检查
@@ -169,8 +169,8 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    # 优化Celery命令，删除重复的pip安装
-    command: celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --without-heartbeat --without-gossip
+    # 优化Celery命令，添加backoff库安装
+    command: bash -c "pip install backoff==2.2.1 && celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --without-heartbeat --without-gossip"
     depends_on:
       api:
         condition: service_healthy

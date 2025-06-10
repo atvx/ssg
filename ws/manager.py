@@ -25,17 +25,40 @@ class ConnectionManager:
     def _start_redis_subscriber(self):
         """启动Redis订阅监听线程"""
         def redis_listener():
+            reconnect_delay = 1  # 初始重连延迟（秒）
+            max_reconnect_delay = 30  # 最大重连延迟（秒）
+            pubsub = None
+            
             while True:  # 无限循环确保订阅不会中断
                 try:
+                    # 关闭之前的pubsub连接（如果存在）
+                    if pubsub:
+                        try:
+                            pubsub.close()
+                        except Exception:
+                            pass
+                    
                     # 创建Redis发布/订阅对象
                     pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
                     # 订阅广播通道
                     pubsub.subscribe(REDIS_BROADCAST_CHANNEL)
                     logger.info(f"已订阅Redis通道: {REDIS_BROADCAST_CHANNEL}")
                     
+                    # 重置重连延迟
+                    reconnect_delay = 1
+                    
                     # 监听消息
-                    for message in pubsub.listen():
+                    while True:
                         try:
+                            # 使用get_message代替listen，增加超时处理
+                            message = pubsub.get_message(timeout=5.0)
+                            if message is None:
+                                # 如果没有消息，发送ping检查连接
+                                if not pubsub.ping():
+                                    logger.warning("Redis ping失败，重新建立连接")
+                                    break
+                                continue
+                            
                             if message['type'] == 'message':
                                 try:
                                     # 解析消息
@@ -58,14 +81,33 @@ class ConnectionManager:
                                             loop.close()
                                 except json.JSONDecodeError as e:
                                     logger.error(f"解析Redis消息JSON格式出错: {str(e)}, 原始消息: {message['data'][:100]}")
+                        except redis.exceptions.TimeoutError:
+                            # 超时但不需要重新连接，这是正常的
+                            continue
+                        except redis.exceptions.ConnectionError as e:
+                            logger.error(f"Redis连接中断: {str(e)}")
+                            break
                         except Exception as e:
                             logger.error(f"处理Redis消息时出错: {str(e)}", exc_info=True)
+                            # 继续监听，不中断循环
+                
                 except redis.RedisError as e:
                     logger.error(f"Redis连接出错: {str(e)}", exc_info=True)
-                    time.sleep(5)  # 出错时等待5秒后重试
+                    # 使用指数退避算法增加重连延迟
+                    time.sleep(reconnect_delay)
+                    reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+                    logger.info(f"将在 {reconnect_delay} 秒后尝试重新连接Redis")
                 except Exception as e:
                     logger.error(f"Redis订阅线程异常: {str(e)}", exc_info=True)
-                    time.sleep(5)  # 出错时等待5秒后重试
+                    time.sleep(reconnect_delay)
+                    reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+                finally:
+                    # 确保pubsub连接关闭
+                    if pubsub:
+                        try:
+                            pubsub.close()
+                        except Exception:
+                            pass
         
         # 创建并启动Redis监听线程
         subscriber_thread = threading.Thread(target=redis_listener, daemon=True)
@@ -248,10 +290,17 @@ class ConnectionManager:
         if sent:
             logger.info(f"验证通知已成功广播到verification频道")
         else:
-            logger.warning(f"验证通知广播可能失败，没有客户端收到消息")
-        
+            logger.warning(f"验证通知广播失败，尝试通过Redis进行广播")
+            # 尝试通过Redis进行广播
+            from utils.redis_utils import publish_ws_message
+            redis_result = publish_ws_message("verification", message)
+            if redis_result:
+                logger.info(f"通过Redis成功发送验证通知")
+            else:
+                logger.error(f"所有验证通知渠道均失败")
+            
         return sent
 
 
-# 全局连接管理器实例
+# 全局WebSocket连接管理器实例
 connection_manager = ConnectionManager() 
