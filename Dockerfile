@@ -106,8 +106,8 @@ ENV REDIS_SOCKET_TIMEOUT=60 \
 COPY requirements.txt .
 
 # 安装Python依赖 - 使用no-cache-dir减少构建空间需求
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir selenium-wire webdriver-manager pyvirtualdisplay retry timeout-decorator requests-toolbelt tenacity
+RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt \
+    && pip install --no-cache-dir --root-user-action=ignore selenium-wire webdriver-manager pyvirtualdisplay retry timeout-decorator requests-toolbelt tenacity
 
 # 复制Selenium和Redis设置脚本
 COPY selenium_setup.py /usr/local/bin/selenium_setup.py
