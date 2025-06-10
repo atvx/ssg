@@ -51,12 +51,9 @@ class ConnectionManager:
                     while True:
                         try:
                             # 使用get_message代替listen，增加超时处理
-                            message = pubsub.get_message(timeout=5.0)
+                            message = pubsub.get_message(timeout=10.0)  # 增加超时时间
                             if message is None:
-                                # 如果没有消息，发送ping检查连接
-                                if not pubsub.ping():
-                                    logger.warning("Redis ping失败，重新建立连接")
-                                    break
+                                # 减少ping频率，仅在长时间无消息时检查连接
                                 continue
                             
                             if message['type'] == 'message':
