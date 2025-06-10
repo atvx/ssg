@@ -187,12 +187,8 @@ else
     echo "没有发现运行中的容器..."
 fi
 
-# 安装backoff库
-echo "安装backoff库..."
-pip install backoff==2.2.1
-
 # 更新docker-compose.yml文件，添加backoff库安装到容器命令
-echo "更新celery_worker命令，确保安装backoff库..."
+echo "更新celery_worker命令，确保在容器内安装backoff库..."
 sed -i 's/command: celery -A celery_app worker/command: bash -c "pip install backoff==2.2.1 \&\& celery -A celery_app worker/g' docker-compose.yml
 
 # 强制重建镜像

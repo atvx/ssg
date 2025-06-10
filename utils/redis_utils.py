@@ -12,9 +12,9 @@ import backoff
 logger = logging.getLogger(__name__)
 
 # 读取环境变量中的Redis连接参数，提供默认值
-REDIS_SOCKET_TIMEOUT = int(settings.get("REDIS_SOCKET_TIMEOUT", 60))
-REDIS_SOCKET_CONNECT_TIMEOUT = int(settings.get("REDIS_SOCKET_CONNECT_TIMEOUT", 30))
-REDIS_MAX_CONNECTIONS = int(settings.get("REDIS_MAX_CONNECTIONS", 20))
+REDIS_SOCKET_TIMEOUT = int(getattr(settings, "REDIS_SOCKET_TIMEOUT", 60))
+REDIS_SOCKET_CONNECT_TIMEOUT = int(getattr(settings, "REDIS_SOCKET_CONNECT_TIMEOUT", 30))
+REDIS_MAX_CONNECTIONS = int(getattr(settings, "REDIS_MAX_CONNECTIONS", 20))
 REDIS_HEALTH_CHECK_INTERVAL = 15  # 更频繁的健康检查
 
 # Redis连接池配置

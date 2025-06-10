@@ -84,11 +84,11 @@ services:
       - ssg-network
     # 添加健康检查
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "--max-time", "10"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
 
   celery_worker:
     build:
