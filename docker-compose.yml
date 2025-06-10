@@ -11,14 +11,14 @@ services:
     cap_add:
       - SYS_ADMIN
       - SYS_TIME
-    # 增加共享内存大小
-    shm_size: 8gb
-    # 增加资源限制
+    # 调整共享内存大小
+    shm_size: 4gb
+    # 优化资源限制
     deploy:
       resources:
         limits:
-          memory: 6G
-          cpus: '2.0'
+          memory: 4G
+          cpus: '1.5'
     security_opt:
       - seccomp=unconfined
     ports:
@@ -102,14 +102,14 @@ services:
     cap_add:
       - SYS_ADMIN
       - SYS_TIME
-    # 增加共享内存大小
-    shm_size: 8gb
-    # 增加资源限制
+    # 调整共享内存大小
+    shm_size: 4gb
+    # 优化资源限制
     deploy:
       resources:
         limits:
-          memory: 6G
-          cpus: '2.0'
+          memory: 4G
+          cpus: '1.5'
     security_opt:
       - seccomp=unconfined
     volumes:
@@ -169,7 +169,8 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    command: bash -c "pip install retry tenacity timeout-decorator && celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --without-heartbeat --without-gossip"
+    # 优化Celery命令，删除重复的pip安装
+    command: celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --without-heartbeat --without-gossip
     depends_on:
       api:
         condition: service_healthy

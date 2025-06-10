@@ -2,183 +2,150 @@
 # -*- coding: utf-8 -*-
 
 """
-Redis连接参数设置脚本
-在容器启动时被执行，为Redis连接增加稳定性配置
+Redis连接配置脚本 - 用于Docker环境中的Redis连接优化
 """
 
 import os
-import sys
 import logging
-import importlib.util
-from pathlib import Path
-import re
+import sys
+import socket
+import time
+from urllib.parse import urlparse
 
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger("redis_setup")
 
-def patch_redis_client():
-    """
-    修补Redis客户端连接配置
-    """
-    from redis_config import get_redis_connection_params
+def parse_redis_url():
+    """解析Redis URL并返回连接信息"""
+    redis_url = os.environ.get("REDIS_URL", "")
+    if not redis_url:
+        logger.warning("未设置REDIS_URL环境变量")
+        return None
     
-    # 检查是否有redis客户端代码
-    redis_client_files = [
-        Path("/app/db/redis.py"),
-        Path("/app/core/redis.py"),
-        Path("/app/redis_client.py"),
-    ]
-    
-    found = False
-    for file_path in redis_client_files:
-        if file_path.exists():
-            # 读取文件内容
-            content = file_path.read_text(encoding='utf-8')
-            logger.info(f"找到Redis客户端文件: {file_path}")
-            
-            # 获取修改后的参数
-            params = get_redis_connection_params()
-            
-            # 生成参数字符串
-            param_str = ", ".join([f"{k}={repr(v)}" for k, v in params.items()])
-            
-            # 检查是否已包含参数配置
-            if "socket_timeout" in content and "retry_on_timeout" in content:
-                logger.info(f"Redis客户端已配置连接参数，跳过修改")
-                found = True
-                continue
-                
-            # 修改Redis连接
-            # 1. 寻找 Redis.from_url 模式
-            new_content = re.sub(
-                r'redis\.Redis\.from_url\(\s*([^,\)]+)(\s*\))',
-                rf'redis.Redis.from_url(\1, {param_str}\2',
-                content
-            )
-            
-            # 2. 寻找 redis.from_url 模式
-            if new_content == content:
-                new_content = re.sub(
-                    r'from_url\(\s*([^,\)]+)(\s*\))',
-                    rf'from_url(\1, {param_str}\2',
-                    content
-                )
-            
-            # 检查是否有修改
-            if new_content != content:
-                logger.info(f"正在更新Redis客户端配置: {file_path}")
-                file_path.write_text(new_content, encoding='utf-8')
-                logger.info(f"Redis客户端配置已更新")
-                found = True
-            else:
-                logger.info(f"未找到匹配的Redis连接模式，无需修改: {file_path}")
-    
-    if not found:
-        logger.warning("未找到Redis客户端文件，无法应用连接参数")
+    try:
+        # 解析URL
+        parsed = urlparse(redis_url)
         
-    return found
+        # 提取主机和端口
+        host = parsed.hostname
+        port = parsed.port or 6379
+        
+        # 提取密码
+        if parsed.password:
+            password = parsed.password
+        elif '@' in redis_url:
+            # 处理格式如 redis://:password@host:port/db 的URL
+            auth_part = redis_url.split('@')[0].split('//')[-1]
+            if ':' in auth_part:
+                password = auth_part.split(':')[-1]
+            else:
+                password = None
+        else:
+            password = None
+        
+        # 提取数据库编号
+        db = 0
+        if parsed.path:
+            try:
+                db = int(parsed.path.strip('/'))
+            except (ValueError, TypeError):
+                pass
+        
+        return {
+            'host': host,
+            'port': port,
+            'password': password,
+            'db': db
+        }
+    except Exception as e:
+        logger.error(f"解析Redis URL时出错: {e}")
+        return None
 
-def patch_celery_config():
-    """
-    修补Celery配置
-    """
-    from redis_config import get_celery_config
+def test_redis_connection(host, port, max_retries=3, timeout=5):
+    """测试Redis连接是否可用"""
+    for attempt in range(max_retries):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            
+            if result == 0:
+                logger.info(f"Redis连接成功: {host}:{port}")
+                return True
+            else:
+                logger.warning(f"Redis连接失败 (尝试 {attempt+1}/{max_retries}): {host}:{port}")
+        except Exception as e:
+            logger.warning(f"测试Redis连接时出错 (尝试 {attempt+1}/{max_retries}): {e}")
+        
+        if attempt < max_retries - 1:
+            time.sleep(2)
     
-    # 检查是否有celery配置文件
-    celery_files = [
-        Path("/app/celery_app.py"),
-        Path("/app/core/celery_app.py"),
-        Path("/app/celery_config.py"),
+    logger.error(f"无法连接到Redis服务器: {host}:{port}")
+    return False
+
+def setup_redis_env():
+    """配置Redis环境变量，以提高连接稳定性"""
+    logger.info("设置Redis连接参数...")
+    
+    # 设置Redis连接参数的默认值
+    params = {
+        "REDIS_SOCKET_TIMEOUT": "60",
+        "REDIS_SOCKET_CONNECT_TIMEOUT": "30",
+        "REDIS_SOCKET_KEEPALIVE": "True",
+        "REDIS_RETRY_ON_TIMEOUT": "True",
+        "REDIS_MAX_CONNECTIONS": "20",
+        "CELERY_BROKER_CONNECTION_TIMEOUT": "60",
+        "CELERY_BROKER_CONNECTION_MAX_RETRIES": "10",
+        "CELERY_BROKER_HEARTBEAT": "30",
+        "CELERY_BROKER_POOL_LIMIT": "10",
+        "CELERY_VISIBILITY_TIMEOUT": "43200"
+    }
+    
+    # 应用默认参数
+    for key, value in params.items():
+        os.environ.setdefault(key, value)
+    
+    # 获取Redis连接信息
+    redis_info = parse_redis_url()
+    if redis_info:
+        logger.info(f"Redis服务器: {redis_info['host']}:{redis_info['port']}, 数据库: {redis_info['db']}")
+        
+        # 测试连接
+        test_redis_connection(redis_info['host'], redis_info['port'])
+    
+    logger.info("Redis连接参数设置完成")
+
+def configure_redis_client():
+    """配置Redis客户端选项，以提高稳定性"""
+    # 这些建议将在日志中输出，应用程序代码中需要使用这些配置
+    recommendations = [
+        "connection_pool=redis.BlockingConnectionPool(max_connections=20, timeout=30)",
+        "socket_timeout=60",
+        "socket_connect_timeout=30",
+        "retry_on_timeout=True",
+        "health_check_interval=30"
     ]
     
-    found = False
-    for file_path in celery_files:
-        if file_path.exists():
-            # 读取文件内容
-            content = file_path.read_text(encoding='utf-8')
-            logger.info(f"找到Celery配置文件: {file_path}")
-            
-            # 获取Celery配置
-            config = get_celery_config()
-            
-            # 检查是否已配置
-            if "broker_connection_timeout" in content and "broker_heartbeat" in content:
-                logger.info(f"Celery已配置连接参数，跳过修改")
-                found = True
-                continue
-                
-            # 生成配置代码
-            config_code = "# Redis连接增强配置\n"
-            for key, value in config.items():
-                if key not in ["broker_url", "result_backend"]:  # 跳过已有的基本配置
-                    if isinstance(value, dict):
-                        config_code += f"app.conf.{key} = {{\n"
-                        for k, v in value.items():
-                            config_code += f"    '{k}': {repr(v)},\n"
-                        config_code += "}\n"
-                    else:
-                        config_code += f"app.conf.{key} = {repr(value)}\n"
-            
-            # 检查是否有应用对象
-            if "app = Celery" in content:
-                insert_point = content.find("app = Celery")
-                insert_point = content.find("\n", insert_point) + 1
-                
-                new_content = content[:insert_point] + "\n" + config_code + content[insert_point:]
-                
-                # 保存修改
-                logger.info(f"正在更新Celery配置: {file_path}")
-                file_path.write_text(new_content, encoding='utf-8')
-                logger.info(f"Celery配置已更新")
-                found = True
-            else:
-                logger.info(f"未找到Celery应用对象，无法应用配置: {file_path}")
-    
-    if not found:
-        logger.warning("未找到Celery配置文件，无法应用连接参数")
-        
-    return found
+    logger.info("推荐的Redis客户端配置:")
+    for rec in recommendations:
+        logger.info(f" - {rec}")
 
 def main():
     """主函数"""
     try:
-        logger.info("开始设置Redis连接参数...")
-        
-        # 确保redis_config可被导入
-        if not Path("/app/redis_config.py").exists():
-            # 尝试将当前目录的redis_config.py复制到应用目录
-            current_dir = Path(__file__).parent
-            if Path(current_dir, "redis_config.py").exists():
-                import shutil
-                shutil.copy(Path(current_dir, "redis_config.py"), "/app/redis_config.py")
-                logger.info("已复制redis_config.py到应用目录")
-            else:
-                logger.error("找不到redis_config.py，无法继续")
-                return 1
-        
-        # 添加应用目录到路径
-        sys.path.insert(0, "/app")
-        
-        # 修补Redis客户端
-        redis_patched = patch_redis_client()
-        
-        # 修补Celery配置
-        celery_patched = patch_celery_config()
-        
-        if redis_patched or celery_patched:
-            logger.info("Redis连接参数设置完成!")
-        else:
-            logger.warning("未应用任何Redis连接参数!")
-            
+        logger.info("开始初始化Redis环境...")
+        setup_redis_env()
+        configure_redis_client()
+        logger.info("Redis环境初始化完成!")
         return 0
     except Exception as e:
-        logger.error(f"设置过程中发生错误: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"初始化过程中发生错误: {e}")
         return 1
 
 if __name__ == "__main__":

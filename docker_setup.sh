@@ -157,7 +157,15 @@ chmod +x redis_monitor.sh
 # 添加Redis连接监控定时任务
 (crontab -l 2>/dev/null || echo "") | grep -v "redis_monitor.sh" | { cat; echo "*/15 * * * * $(pwd)/redis_monitor.sh >> $(pwd)/redis_monitor.log 2>&1"; } | crontab -
 
-echo "=== 7. 构建和启动Docker服务 ==="
+# 清理Docker缓存和未使用的镜像/卷
+echo "=== 7. 清理Docker系统缓存 ==="
+echo "清理Docker缓存以释放空间..."
+docker system prune -f
+docker image prune -f
+docker volume prune -f
+docker builder prune -f
+
+echo "=== 8. 构建和启动Docker服务 ==="
 # 检测Docker Compose命令格式
 if command -v docker &> /dev/null && docker compose version &> /dev/null; then
     COMPOSE_CMD="docker compose"
@@ -181,13 +189,13 @@ fi
 
 # 强制重建镜像
 echo "构建Docker镜像..."
-$COMPOSE_CMD build --no-cache
+$COMPOSE_CMD build --no-cache --pull
 
 # 启动服务
 echo "启动服务..."
 $COMPOSE_CMD up -d
 
-echo "=== 8. 部署完成 ==="
+echo "=== 9. 部署完成 ==="
 echo "服务已启动，API文档地址: http://localhost:3400/docs"
 echo
 
