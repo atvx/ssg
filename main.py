@@ -198,6 +198,12 @@ def ping():
     return {"ping": "pong", "status": "ok"}
 
 
+@app.get("/health")
+def health_check():
+    """健康检查端点"""
+    return {"status": "healthy", "service": "销售数据获取系统", "timestamp": "ok"}
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "main:app", 

@@ -105,7 +105,7 @@ def fetch_data_get(
                 if not platform:
                     # 获取所有平台数据
                     meituan_result = fetch_meituan_data(db, date_str, user_id)
-                    duowei_result = fetch_duowei_data(date_str)
+                    duowei_result = fetch_duowei_data(date_str, db)
                     
                     # 合并结果
                     all_data = {
@@ -155,7 +155,7 @@ def fetch_data_get(
                         
                 elif platform == "duowei":
                     # 只获取多维数据
-                    result = fetch_duowei_data(date_str)
+                    result = fetch_duowei_data(date_str, db)
                     result["execution_mode"] = "sync"
                     
                     if result.get("success", False):

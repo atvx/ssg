@@ -4,7 +4,7 @@
 broker_url = "redis://:163000@124.221.92.150:6378/0"
 result_backend = "redis://:163000@124.221.92.150:6378/0"
 
-# Redis配置 - 优化超时和连接设置
+# Redis配置
 broker_transport_options = {
     'visibility_timeout': 43200,  # 12小时 - 增加任务可见性超时
     'socket_timeout': 60,         # socket超时 - 增加到60秒
@@ -36,7 +36,7 @@ enable_utc = False
 task_track_started = True
 worker_max_tasks_per_child = 100
 
-# 任务重试设置 - 优化重试和连接处理
+# 任务重试设置
 task_acks_late = True           # 任务完成后再确认
 task_reject_on_worker_lost = True  # worker丢失时拒绝任务
 broker_connection_retry = True   # 连接断开时重试
@@ -54,4 +54,4 @@ task_soft_time_limit = 1800     # 30分钟软超时
 task_time_limit = 2400          # 40分钟硬超时
 
 # 结果过期时间 - 增加保留时间
-result_expires = 86400  # 24小时 
+result_expires = 86400  # 24小时

@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Shanghai
 
-# 解决GPG密钥问题并安装依赖
+# 解决GPG密钥问题并安装依赖 - 合并安装和清理步骤减少层数
 RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecureRepositories=true \
     && apt-get install -y --no-install-recommends gnupg \
     && apt-key update \
@@ -26,38 +26,31 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecure
     tzdata \
     ntpdate \
     procps \
-    htop \
     net-tools \
     netcat-openbsd \
-    # 添加更多依赖以解决Chrome崩溃问题
+    # 精简Chrome依赖，仅保留关键组件
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
     libatk-bridge2.0-0 \
     libcups2 \
-    libdrm2 \
     libxkbcommon0 \
     libxcomposite1 \
     libxdamage1 \
     libxfixes3 \
-    libxrandr2 \
     libgbm1 \
-    libasound2 \
     libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libcairo2 \
-    libatspi2.0-0 \
-    # 添加Firefox作为备选浏览器
+    # 仅保留Firefox作为备选浏览器
     firefox-esr \
     && sed -i -e 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen \
     && locale-gen \
+    # 立即清理减少镜像大小
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 设置时区和时间同步配置
+# 设置时区和时间同步配置 - 合并到单个RUN命令
 RUN echo "Asia/Shanghai" > /etc/timezone \
     && dpkg-reconfigure -f noninteractive tzdata \
-    # 使用ntpdate替换ntp服务
     && echo "#!/bin/bash\nntpdate -u cn.pool.ntp.org || true" > /usr/local/bin/sync_time \
     && chmod +x /usr/local/bin/sync_time
 
@@ -66,35 +59,27 @@ ENV LANG=zh_CN.UTF-8 \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8
 
-# 下载和安装Chrome和ChromeDriver (AMD64架构)
-RUN wget -q --no-verbose -O /tmp/chrome-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/linux64/chrome-linux64.zip" \
-    && wget -q --no-verbose -O /tmp/chromedriver-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/linux64/chromedriver-linux64.zip" \
+# 下载和安装Chrome和ChromeDriver - 合并多个步骤减少层数
+RUN wget -q -O /tmp/chrome-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/linux64/chrome-linux64.zip" \
+    && wget -q -O /tmp/chromedriver-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/linux64/chromedriver-linux64.zip" \
     && unzip /tmp/chrome-linux64.zip -d /opt/ \
     && unzip /tmp/chromedriver-linux64.zip -d /opt/ \
     && rm /tmp/chrome-linux64.zip /tmp/chromedriver-linux64.zip \
     && chmod +x /opt/chrome-linux64/chrome \
-    && chmod +x /opt/chromedriver-linux64/chromedriver
+    && chmod +x /opt/chromedriver-linux64/chromedriver \
+    # 创建软链接与目录 - 合并到同一层
+    && ln -sf /opt/chrome-linux64/chrome /usr/bin/google-chrome \
+    && ln -sf /opt/chrome-linux64/chrome /usr/bin/google-chrome-stable \
+    && ln -sf /opt/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+    && mkdir -p /var/run/chrome /tmp/chrome_tmp \
+    && chmod -R 777 /var/run/chrome /tmp/chrome_tmp
 
-# 下载和安装geckodriver (Firefox WebDriver)
+# 下载和安装geckodriver - 与Firefox相关设置合并
 RUN GECKODRIVER_VERSION="v0.33.0" \
-    && wget -q --no-verbose -O /tmp/geckodriver.tar.gz "https://github.com/mozilla/geckodriver/releases/download/${GECKODRIVER_VERSION}/geckodriver-${GECKODRIVER_VERSION}-linux64.tar.gz" \
+    && wget -q -O /tmp/geckodriver.tar.gz "https://github.com/mozilla/geckodriver/releases/download/${GECKODRIVER_VERSION}/geckodriver-${GECKODRIVER_VERSION}-linux64.tar.gz" \
     && tar -xzf /tmp/geckodriver.tar.gz -C /usr/local/bin/ \
     && rm /tmp/geckodriver.tar.gz \
     && chmod +x /usr/local/bin/geckodriver
-
-# 创建Chrome软链接，避免修改业务代码
-RUN ln -sf /opt/chrome-linux64/chrome /usr/bin/google-chrome && \
-    ln -sf /opt/chrome-linux64/chrome /usr/bin/google-chrome-stable && \
-    ln -sf /opt/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
-    chmod +x /usr/local/bin/chromedriver
-
-# 创建目录以支持Chrome在沙盒模式下运行
-RUN mkdir -p /var/run/chrome && \
-    chmod -R 777 /var/run/chrome
-
-# 创建Chrome临时数据目录
-RUN mkdir -p /tmp/chrome_tmp && \
-    chmod -R 777 /tmp/chrome_tmp
 
 # 设置Chrome/Chromium环境变量
 ENV CHROME_BIN=/usr/bin/google-chrome \
@@ -105,7 +90,6 @@ ENV CHROME_BIN=/usr/bin/google-chrome \
     PATH="/usr/local/bin:/usr/bin:${PATH}" \
     SELENIUM_DRIVER_PATH="/usr/local/bin/chromedriver" \
     SELENIUM_BROWSER_BINARY="/usr/bin/google-chrome" \
-    # 添加Chrome默认启动参数，以适应Docker环境
     CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars"
 
 # 设置Xvfb（虚拟显示服务器）
@@ -121,20 +105,15 @@ ENV REDIS_SOCKET_TIMEOUT=60 \
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装Python依赖
-RUN pip install --no-cache-dir -r requirements.txt \
-    # 添加webdriver-manager支持
-    && pip install --no-cache-dir selenium-wire webdriver-manager pyvirtualdisplay \
-    # 添加更多超时处理库
-    && pip install --no-cache-dir retry timeout-decorator requests-toolbelt tenacity
+# 安装Python依赖 - 使用no-cache-dir减少构建空间需求
+RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt \
+    && pip install --no-cache-dir --root-user-action=ignore selenium-wire webdriver-manager pyvirtualdisplay retry timeout-decorator requests-toolbelt tenacity
 
 # 复制Selenium和Redis设置脚本
 COPY selenium_setup.py /usr/local/bin/selenium_setup.py
 COPY redis_config.py /usr/local/bin/redis_config.py
 COPY redis_setup.py /usr/local/bin/redis_setup.py
-RUN chmod +x /usr/local/bin/selenium_setup.py && \
-    chmod +x /usr/local/bin/redis_config.py && \
-    chmod +x /usr/local/bin/redis_setup.py
+RUN chmod +x /usr/local/bin/selenium_setup.py /usr/local/bin/redis_config.py /usr/local/bin/redis_setup.py
 
 # 创建一个wrapper脚本来设置环境
 RUN echo '#!/bin/bash\n\

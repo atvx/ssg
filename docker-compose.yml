@@ -11,14 +11,14 @@ services:
     cap_add:
       - SYS_ADMIN
       - SYS_TIME
-    # 增加共享内存大小
-    shm_size: 8gb
-    # 增加资源限制
+    # 调整共享内存大小
+    shm_size: 4gb
+    # 优化资源限制
     deploy:
       resources:
         limits:
-          memory: 6G
-          cpus: '2.0'
+          memory: 4G
+          cpus: '1.5'
     security_opt:
       - seccomp=unconfined
     ports:
@@ -79,16 +79,16 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120
+    command: bash -c "pip install backoff==2.2.1 --root-user-action=ignore && uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120"
     networks:
       - ssg-network
     # 添加健康检查
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "--max-time", "10"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
 
   celery_worker:
     build:
@@ -102,14 +102,14 @@ services:
     cap_add:
       - SYS_ADMIN
       - SYS_TIME
-    # 增加共享内存大小
-    shm_size: 8gb
-    # 增加资源限制
+    # 调整共享内存大小
+    shm_size: 4gb
+    # 优化资源限制
     deploy:
       resources:
         limits:
-          memory: 6G
-          cpus: '2.0'
+          memory: 4G
+          cpus: '1.5'
     security_opt:
       - seccomp=unconfined
     volumes:
@@ -169,7 +169,8 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    command: bash -c "pip install retry tenacity timeout-decorator && celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --without-heartbeat --without-gossip"
+    # 优化Celery命令，添加backoff库安装
+    command: bash -c "pip install backoff==2.2.1 --root-user-action=ignore && celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --heartbeat-interval=60 --without-gossip"
     depends_on:
       api:
         condition: service_healthy

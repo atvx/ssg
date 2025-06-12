@@ -29,7 +29,7 @@ class ConnectionManager:
             max_retries = 5
             base_delay = 2  # 基础延迟时间(秒)
             max_delay = 60  # 最大延迟时间(秒)
-            
+
             while True:  # 无限循环确保订阅不会中断
                 pubsub = None
                 try:
@@ -45,7 +45,7 @@ class ConnectionManager:
                         retry_on_timeout=True,
                         retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]
                     )
-                    
+
                     # 创建Redis发布/订阅对象
                     pubsub = pubsub_redis.pubsub(ignore_subscribe_messages=True)
                     # 订阅广播通道
@@ -54,7 +54,7 @@ class ConnectionManager:
                     
                     # 重置重试计数器
                     retry_count = 0
-                    
+
                     # 监听消息
                     for message in pubsub.listen():
                         try:
@@ -82,14 +82,14 @@ class ConnectionManager:
                                     logger.error(f"解析Redis消息JSON格式出错: {str(e)}, 原始消息: {message['data'][:100]}")
                         except Exception as e:
                             logger.error(f"处理Redis消息时出错: {str(e)}", exc_info=True)
-                            
+
                 except (redis.RedisError, redis.exceptions.TimeoutError, redis.exceptions.ConnectionError) as e:
                     retry_count += 1
                     # 计算指数退避延迟时间
                     delay = min(base_delay * (2 ** (retry_count - 1)), max_delay)
-                    
+
                     logger.error(f"Redis连接出错 (重试次数: {retry_count}): {str(e)}")
-                    
+
                     if retry_count <= max_retries:
                         logger.info(f"将在 {delay} 秒后重试Redis连接...")
                         time.sleep(delay)
@@ -97,15 +97,15 @@ class ConnectionManager:
                         logger.error(f"Redis重连失败，已达到最大重试次数 {max_retries}，等待 {max_delay} 秒后重置重试计数器")
                         time.sleep(max_delay)
                         retry_count = 0  # 重置重试计数器
-                        
+
                 except Exception as e:
                     retry_count += 1
                     delay = min(base_delay * (2 ** (retry_count - 1)), max_delay)
-                    
+
                     logger.error(f"Redis订阅线程异常 (重试次数: {retry_count}): {str(e)}", exc_info=True)
                     logger.info(f"将在 {delay} 秒后重试...")
                     time.sleep(delay)
-                    
+
                 finally:
                     # 确保pubsub连接被正确关闭
                     if pubsub:

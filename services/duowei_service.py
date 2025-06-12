@@ -4,15 +4,19 @@ from typing import List, Optional, Dict, Any
 import datetime
 import requests
 from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
 
 from core.duowei.data import get_all_duowei_data
 from config.settings import settings
+from db.crud import create_or_update_sales_record
+from schemas.sales import SalesRecordCreate
+from db.database import SessionLocal
 
 # 配置日志
 logger = logging.getLogger(__name__)
 
 
-def fetch_duowei_data(date: Optional[str] = None) -> Dict[str, Any]:
+def fetch_duowei_data(date: Optional[str] = None, db: Session = None) -> Dict[str, Any]:
     """
     获取多维系统销售数据
     
@@ -92,9 +96,47 @@ def fetch_duowei_data(date: Optional[str] = None) -> Dict[str, Any]:
             data = get_all_duowei_data(config, target_date)
             logger.info(f"成功获取多维系统数据，共 {len(data)} 条记录")
             
+            # 保存数据到数据库
+            saved_count = 0
+            if db and data:
+                try:
+                    logger.info(f"开始保存多维数据到数据库，共 {len(data)} 条记录")
+                    query_date_obj = datetime.datetime.strptime(target_date, "%Y-%m-%d").date()
+                    
+                    for record in data:
+                        try:
+                            # 计算平均收入
+                            sales_count = record.get("salesCartCount", 0)
+                            income_amt = record.get("incomeAmt", 0)
+                            avg_income_amt = income_amt / sales_count if sales_count > 0 else 0
+                            
+                            # 创建销售记录对象
+                            sales_record = SalesRecordCreate(
+                                date=query_date_obj,
+                                platform="duowei",
+                                warehouse_name=record.get("name", ""),
+                                income_amt=income_amt,
+                                sales_cart_count=sales_count,
+                                avg_income_amt=avg_income_amt
+                            )
+                            
+                            # 保存到数据库
+                            create_or_update_sales_record(db, sales_record)
+                            saved_count += 1
+                            
+                        except Exception as e:
+                            logger.error(f"保存单条多维记录失败: {e}, 记录: {record}")
+                            continue
+                    
+                    logger.info(f"多维数据保存完成，成功保存 {saved_count}/{len(data)} 条记录")
+                    
+                except Exception as e:
+                    logger.error(f"保存多维数据到数据库失败: {e}")
+                    # 即使保存失败，也返回获取到的数据
+            
             # 更新结果
             result["success"] = True
-            result["message"] = "获取数据成功"
+            result["message"] = f"获取数据成功" + (f"，已保存 {saved_count} 条记录到数据库" if db else "")
             result["data"] = data
             
             return result
