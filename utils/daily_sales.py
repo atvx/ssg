@@ -37,25 +37,43 @@ def calculate_summary(warehouses_data):
     if not warehouses_data:
         return {}
     
-    numeric_fields = ['car_count', 'daily_revenue', 'daily_cart_count', 'target_income', 
-                      'actual_income', 'per_car_income', 'sold_car_count']
+    # 累加基础数据
+    summary = {
+        'car_count': 0,           # 1.车辆配置：累加值
+        'daily_revenue': 0,       # 2.当日销售：累加值
+        'daily_cart_count': 0,    # 4.当日车次：累加值
+        'target_income': 0,       # 5.月目标：累加值
+        'actual_income': 0,       # 6.月累计：累加值
+        'sold_car_count': 0       # 9.累计车次：累加值
+    }
     
-    summary = {}
-    for field in numeric_fields:
-        summary[field] = sum(w.get(field, 0) for w in warehouses_data)
+    # 累加所有基础数据
+    for warehouse in warehouses_data:
+        summary['car_count'] += warehouse.get('car_count', 0)
+        summary['daily_revenue'] += warehouse.get('daily_revenue', 0)
+        summary['daily_cart_count'] += warehouse.get('daily_cart_count', 0)
+        summary['target_income'] += warehouse.get('target_income', 0)
+        summary['actual_income'] += warehouse.get('actual_income', 0)
+        summary['sold_car_count'] += warehouse.get('sold_car_count', 0)
     
-    # 计算平均每车收入
+    # 3.当日车均 = 当日销售 / 当日车次
     if summary['daily_cart_count'] > 0:
         summary['daily_avg_revenue_cart'] = round(summary['daily_revenue'] / summary['daily_cart_count'])
     else:
         summary['daily_avg_revenue_cart'] = 0
     
-    # 计算达成率
+    # 7.累计达成率 = 月累计 / 月目标
     if summary['target_income'] > 0:
         ach_rate = (summary['actual_income'] / summary['target_income']) * 100
         summary['ach_rate'] = format_percentage(ach_rate)
     else:
         summary['ach_rate'] = "0.0%"
+    
+    # 8.累计车均 = 月累计 / 累计车次
+    if summary['sold_car_count'] > 0:
+        summary['per_car_income'] = round(summary['actual_income'] / summary['sold_car_count'])
+    else:
+        summary['per_car_income'] = 0
     
     return summary
 
@@ -74,7 +92,8 @@ def process_data_to_json(df):
     
     for col in numeric_columns:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+            # 使用round函数四舍五入后再转换为int，避免截断问题
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round().astype(int)
     
     # 格式化ach_rate为百分比字符串
     df['ach_rate_str'] = df['ach_rate'].apply(lambda x: format_percentage(x))
@@ -116,15 +135,15 @@ def process_data_to_json(df):
             warehouse = {
                 "id": idx,  # 在每个市场内的顺序ID
                 "name": row['name'],
-                "car_count": int(row['car_count']) if pd.notna(row['car_count']) else 0,
-                "daily_revenue": int(row['daily_revenue']) if pd.notna(row['daily_revenue']) else 0,
-                "daily_avg_revenue_cart": int(row['daily_avg_revenue_cart']) if pd.notna(row['daily_avg_revenue_cart']) else 0,
-                "daily_cart_count": int(row['daily_cart_count']) if pd.notna(row['daily_cart_count']) else 0,
-                "target_income": int(row['target_income']) if pd.notna(row['target_income']) else 0,
-                "actual_income": int(row['actual_income']) if pd.notna(row['actual_income']) else 0,
+                "car_count": round(row['car_count']) if pd.notna(row['car_count']) else 0,
+                "daily_revenue": round(row['daily_revenue']) if pd.notna(row['daily_revenue']) else 0,
+                "daily_avg_revenue_cart": round(row['daily_avg_revenue_cart']) if pd.notna(row['daily_avg_revenue_cart']) else 0,
+                "daily_cart_count": round(row['daily_cart_count']) if pd.notna(row['daily_cart_count']) else 0,
+                "target_income": round(row['target_income']) if pd.notna(row['target_income']) else 0,
+                "actual_income": round(row['actual_income']) if pd.notna(row['actual_income']) else 0,
                 "ach_rate": row['ach_rate_str'],
-                "per_car_income": int(row['per_car_income']) if pd.notna(row['per_car_income']) else 0,
-                "sold_car_count": int(row['sold_car_count']) if pd.notna(row['sold_car_count']) else 0
+                "per_car_income": round(row['per_car_income']) if pd.notna(row['per_car_income']) else 0,
+                "sold_car_count": round(row['sold_car_count']) if pd.notna(row['sold_car_count']) else 0
             }
             
             market_data["warehouses"].append(warehouse)
@@ -149,7 +168,7 @@ def execute_query():
     now = datetime.now()
     current_year = now.year
     current_month = now.month
-    query_date = '2025-06-11'
+    query_date = '2025-06-12'
     
     # 构建SQL查询
     query = f"""
