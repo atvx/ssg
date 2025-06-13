@@ -21,7 +21,7 @@ def export_json_to_excel(json_data, report_date, filename=None):
     将JSON数据导出为Excel文件，按照指定格式和样式
     
     json_data: 数据集
-    report_date: 报告日期，格式“YYYY-MM-DD”
+    report_date: 报告日期，格式"YYYY-MM-DD"
     filename: 输出文件名，例如"市场销售数据_6月10日.xlsx"
     """
 
@@ -77,13 +77,33 @@ def export_json_to_excel(json_data, report_date, filename=None):
     # 日期部分，用空格手动拼接
     date_str = f"{dt.month} 月 {dt.day} 日"
     title = f"{title_head}  {date_str}"
+    
+    # 先设置单元格边框为thin_border
+    for col in range(1, 13):
+        cell = ws.cell(row=current_row, column=col)
+        cell.border = thin_border
+    
+    # 合并单元格并设置值和样式
     ws.merge_cells('A1:L1')
     title_cell = ws['A1']
     title_cell.value = title
     title_cell.font = title_font
     title_cell.fill = title_fill
     title_cell.alignment = center_alignment
-    title_cell.border = medium_border
+    
+    # 设置标题区域外边框为medium
+    for col in range(1, 13):
+        cell = ws.cell(row=current_row, column=col)
+        # 保持原有边框，但在区域边界添加medium边框
+        current_border = cell.border
+        new_border = Border(
+            left=Side(style='medium') if col == 1 else current_border.left,
+            right=Side(style='medium') if col == 12 else current_border.right,
+            top=Side(style='medium'),
+            bottom=Side(style='medium')
+        )
+        cell.border = new_border
+
     ws.row_dimensions[current_row].height = 33
     current_row += 1
 
@@ -96,7 +116,20 @@ def export_json_to_excel(json_data, report_date, filename=None):
         cell.value = header
         cell.font = header_font
         cell.alignment = center_alignment
-        cell.border = medium_border
+        cell.border = thin_border
+
+    # 设置表头区域外边框为medium
+    for col in range(1, 13):
+        cell = ws.cell(row=current_row, column=col)
+        # 保持原有边框，但在区域边界添加medium边框
+        current_border = cell.border
+        new_border = Border(
+            left=Side(style='medium') if col == 1 else current_border.left,
+            right=Side(style='medium') if col in (1, 12) else current_border.right,
+            top=Side(style='medium'),
+            bottom=Side(style='medium')
+        )
+        cell.border = new_border
 
     ws.row_dimensions[current_row].height = 22.5
     current_row += 1
@@ -209,10 +242,10 @@ def export_json_to_excel(json_data, report_date, filename=None):
     # 4. 总计行
     total_data = json_data['total']
 
-    # 合并A列到C列作为"总计"，先设置所有单元格的边框
+    # 合并A列到C列作为"总计"，先设置所有单元格的thin_border
     for col in range(1, 4):
         cell = ws.cell(row=current_row, column=col)
-        cell.border = medium_border
+        cell.border = thin_border
         if col == 1:
             cell.value = '总计'
             cell.font = summary_font
@@ -238,9 +271,22 @@ def export_json_to_excel(json_data, report_date, filename=None):
         cell = ws.cell(row=current_row, column=col)
         cell.font = summary_font
         cell.alignment = center_alignment
-        cell.border = medium_border
+        cell.border = thin_border
 
     ws.row_dimensions[current_row].height = 33
+    
+    # 设置总计区域外边框为medium
+    for col in range(1, 13):
+        cell = ws.cell(row=current_row, column=col)
+        # 保持原有边框，但在区域边界添加medium边框
+        current_border = cell.border
+        new_border = Border(
+            left=Side(style='medium') if col == 1 else current_border.left,
+            right=Side(style='medium') if col == 12 else current_border.right,
+            top=Side(style='medium'),
+            bottom=Side(style='medium')
+        )
+        cell.border = new_border
 
     # 保存文件
     wb.save(filename)

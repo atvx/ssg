@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 import json
 from excel import export_json_to_excel
+from decimal import Decimal, ROUND_HALF_UP
 
 # 获取项目根目录
 root_dir = Path(__file__).parent.parent
@@ -29,8 +30,14 @@ def get_connection():
         sys.exit(1)
 
 def format_percentage(value):
-    """将小数格式化为百分比字符串"""
-    return f"{value:.1f}%" if pd.notna(value) else "0.0%"
+    """将小数格式化为百分比字符串，使用Decimal确保精确计算"""
+    if pd.notna(value):
+        # 转换为Decimal并四舍五入到小数点后1位
+        dec_value = Decimal(str(value))
+        rounded = dec_value.quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+        return f"{rounded:.1f}%"
+    else:
+        return "0.0%"
 
 def calculate_summary(warehouses_data):
     """计算仓库列表的汇总数据"""
@@ -58,20 +65,33 @@ def calculate_summary(warehouses_data):
     
     # 3.当日车均 = 当日销售 / 当日车次
     if summary['daily_cart_count'] > 0:
-        summary['daily_avg_revenue_cart'] = round(summary['daily_revenue'] / summary['daily_cart_count'])
+        # 使用Decimal进行精确计算和四舍五入
+        daily_revenue = Decimal(str(summary['daily_revenue']))
+        daily_cart_count = Decimal(str(summary['daily_cart_count']))
+        daily_avg = daily_revenue / daily_cart_count
+        # 四舍五入到整数
+        summary['daily_avg_revenue_cart'] = int(daily_avg.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     else:
         summary['daily_avg_revenue_cart'] = 0
     
     # 7.累计达成率 = 月累计 / 月目标
     if summary['target_income'] > 0:
-        ach_rate = (summary['actual_income'] / summary['target_income']) * 100
+        # 使用Decimal进行精确计算
+        actual_income = Decimal(str(summary['actual_income']))
+        target_income = Decimal(str(summary['target_income']))
+        ach_rate = (actual_income / target_income) * Decimal('100')
         summary['ach_rate'] = format_percentage(ach_rate)
     else:
         summary['ach_rate'] = "0.0%"
     
     # 8.累计车均 = 月累计 / 累计车次
     if summary['sold_car_count'] > 0:
-        summary['per_car_income'] = round(summary['actual_income'] / summary['sold_car_count'])
+        # 使用Decimal进行精确计算和四舍五入
+        actual_income = Decimal(str(summary['actual_income']))
+        sold_car_count = Decimal(str(summary['sold_car_count']))
+        per_car = actual_income / sold_car_count
+        # 四舍五入到整数
+        summary['per_car_income'] = int(per_car.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     else:
         summary['per_car_income'] = 0
     

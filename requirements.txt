@@ -30,3 +30,5 @@ tenacity>=8.2.3
 requests-toolbelt>=1.0.0
 pyvirtualdisplay>=3.0
 backoff>=2.2.1
+pandas>=2.3.0
+openpyxl>=3.1.5
