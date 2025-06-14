@@ -26,6 +26,8 @@ services:
     volumes:
       - ./:/app
       - ./chrome_user_data:/app/chrome_user_data
+      # 新增：日报数据文件持久化
+      - ./data:/app/data
       # 添加/dev/shm卷映射
       - /dev/shm:/dev/shm
       # 临时目录映射到容器外部
@@ -75,6 +77,9 @@ services:
       - TZ=Asia/Shanghai
       # 添加hostname固定值
       - CELERY_HOSTNAME=ssg-api
+      # 新增：日报导出相关环境变量
+      - LIBREOFFICE_PATH=/usr/bin/libreoffice
+      - POPPLER_PATH=/usr/bin
     ulimits:
       nofile:
         soft: 65536
@@ -115,6 +120,8 @@ services:
     volumes:
       - ./:/app
       - ./chrome_user_data:/app/chrome_user_data
+      # 新增：日报数据文件持久化
+      - ./data:/app/data
       # 添加/dev/shm卷映射
       - /dev/shm:/dev/shm
       # 临时目录映射到容器外部
@@ -165,6 +172,9 @@ services:
       - CELERY_HOSTNAME=ssg-worker
       # 添加重试库环境变量
       - PYTHONPATH=/app
+      # 新增：日报导出相关环境变量
+      - LIBREOFFICE_PATH=/usr/bin/libreoffice
+      - POPPLER_PATH=/usr/bin
     ulimits:
       nofile:
         soft: 65536

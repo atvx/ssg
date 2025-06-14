@@ -42,6 +42,12 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecure
     libpango-1.0-0 \
     # 仅保留Firefox作为备选浏览器
     firefox-esr \
+    # 新增：日报导出功能依赖
+    libreoffice \
+    poppler-utils \
+    # 额外字体支持，确保Excel/PDF中文显示正常
+    fonts-liberation \
+    fonts-dejavu-core \
     && sed -i -e 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen \
     && locale-gen \
     # 立即清理减少镜像大小
@@ -90,7 +96,10 @@ ENV CHROME_BIN=/usr/bin/google-chrome \
     PATH="/usr/local/bin:/usr/bin:${PATH}" \
     SELENIUM_DRIVER_PATH="/usr/local/bin/chromedriver" \
     SELENIUM_BROWSER_BINARY="/usr/bin/google-chrome" \
-    CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars"
+    CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars" \
+    # 新增：日报导出相关环境变量
+    LIBREOFFICE_PATH=/usr/bin/libreoffice \
+    POPPLER_PATH=/usr/bin
 
 # 设置Xvfb（虚拟显示服务器）
 ENV DISPLAY=:99
@@ -128,6 +137,9 @@ chmod -R 777 /app/chrome_user_data\n\
 # 确保临时目录存在并有正确权限\n\
 mkdir -p /tmp/chrome_tmp\n\
 chmod -R 777 /tmp/chrome_tmp\n\
+# 新增：确保日报导出数据目录存在并有正确权限\n\
+mkdir -p /app/data\n\
+chmod -R 777 /app/data\n\
 # 运行Selenium设置脚本\n\
 python /usr/local/bin/selenium_setup.py\n\
 # 运行Redis配置脚本\n\
