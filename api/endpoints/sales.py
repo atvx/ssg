@@ -25,6 +25,8 @@ from services.sales_service import get_all_sales_data, get_sales_data_by_date
 from services.meituan_service import fetch_meituan_data
 from services.duowei_service import fetch_duowei_data
 from utils.response_utils import create_success_response, create_error_response
+from services.daily_report_service import DailyReportService
+from services.sales_target_service import SalesTargetService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -127,6 +129,19 @@ def fetch_data_get(
                         }
                     }
                     
+                    # 同步模式下更新月度销售目标
+                    try:
+                        target_result = SalesTargetService.update_monthly_targets(db, date_str)
+                        if target_result["success"]:
+                            logger.info(f"同步模式全平台数据获取完成后更新月目标成功: {target_result['message']}")
+                            all_data["target_update"] = target_result
+                        else:
+                            logger.warning(f"同步模式全平台数据获取完成后更新月目标失败: {target_result['message']}")
+                            all_data["target_update"] = target_result
+                    except Exception as target_error:
+                        logger.error(f"同步模式全平台数据获取完成后更新月目标时出错: {str(target_error)}")
+                        all_data["target_update"] = {"success": False, "error": str(target_error)}
+                    
                     return create_success_response(
                         message="全平台数据获取完成",
                         data=all_data
@@ -138,6 +153,19 @@ def fetch_data_get(
                     result["execution_mode"] = "sync"
                     
                     if result.get("success", False):
+                        # 同步模式下更新月度销售目标
+                        try:
+                            target_result = SalesTargetService.update_monthly_targets(db, date_str)
+                            if target_result["success"]:
+                                logger.info(f"同步模式美团数据获取完成后更新月目标成功: {target_result['message']}")
+                                result["target_update"] = target_result
+                            else:
+                                logger.warning(f"同步模式美团数据获取完成后更新月目标失败: {target_result['message']}")
+                                result["target_update"] = target_result
+                        except Exception as target_error:
+                            logger.error(f"同步模式美团数据获取完成后更新月目标时出错: {str(target_error)}")
+                            result["target_update"] = {"success": False, "error": str(target_error)}
+                        
                         return create_success_response(
                             message="美团数据获取成功",
                             data=result
@@ -159,6 +187,19 @@ def fetch_data_get(
                     result["execution_mode"] = "sync"
                     
                     if result.get("success", False):
+                        # 同步模式下更新月度销售目标
+                        try:
+                            target_result = SalesTargetService.update_monthly_targets(db, date_str)
+                            if target_result["success"]:
+                                logger.info(f"同步模式多维数据获取完成后更新月目标成功: {target_result['message']}")
+                                result["target_update"] = target_result
+                            else:
+                                logger.warning(f"同步模式多维数据获取完成后更新月目标失败: {target_result['message']}")
+                                result["target_update"] = target_result
+                        except Exception as target_error:
+                            logger.error(f"同步模式多维数据获取完成后更新月目标时出错: {str(target_error)}")
+                            result["target_update"] = {"success": False, "error": str(target_error)}
+                        
                         return create_success_response(
                             message="多维数据获取成功",
                             data=result
@@ -191,7 +232,6 @@ def fetch_data_get(
                 task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
                 fetch_duowei_task.delay(task.id, date_str, user_id)
 
-            # 更新月目标
 
 
             return create_success_response(
@@ -539,6 +579,112 @@ def delete_sales_target(
         logger.error(f"删除销售目标失败: {str(e)}")
         return create_error_response(
             message=f"删除销售目标失败: {str(e)}",
+            error_type=ErrorType.SERVER_ERROR,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details=[{
+                "field": "system",
+                "message": str(e)
+            }]
+        )
+
+
+@router.get("/daily/export", summary="导出日报")
+def export_daily_report(
+    date: Optional[str] = Query(None, description="查询日期（格式 YYYY-MM-DD），为空时默认为当前日期"),
+    formats: Optional[str] = Query("excel,pdf,png", description="导出格式，多个格式用逗号分隔，可选值：excel,pdf,png"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    导出日报数据到各种格式
+    
+    参数:
+    - date: 查询日期（格式 YYYY-MM-DD），为空时默认为当前日期
+    - formats: 导出格式，多个格式用逗号分隔，可选值：excel,pdf,png，默认全部导出
+    
+    返回:
+    - 导出结果，包含数据和文件路径信息
+    """
+    try:
+        # 处理日期参数
+        query_date = date
+        if date:
+            try:
+                # 验证日期格式
+                datetime.strptime(date, "%Y-%m-%d")
+                logger.info(f"日报导出: 收到日期参数 {date}")
+            except ValueError:
+                return create_error_response(
+                    message="无效的日期格式，应为YYYY-MM-DD",
+                    error_type=ErrorType.VALIDATION_ERROR,
+                    code=status.HTTP_400_BAD_REQUEST,
+                    details=[{
+                        "field": "date",
+                        "message": "无效的日期格式，应为YYYY-MM-DD"
+                    }]
+                )
+        else:
+            # 未提供日期参数，将在服务层使用当前日期
+            logger.info("日报导出: 未提供日期参数，将使用当前日期")
+        
+        # 处理导出格式参数
+        valid_formats = {"excel", "pdf", "png"}
+        if formats:
+            # 解析格式字符串
+            requested_formats = [f.strip().lower() for f in formats.split(",")]
+            # 验证格式
+            invalid_formats = set(requested_formats) - valid_formats
+            if invalid_formats:
+                return create_error_response(
+                    message=f"不支持的导出格式: {list(invalid_formats)}",
+                    error_type=ErrorType.VALIDATION_ERROR,
+                    code=status.HTTP_400_BAD_REQUEST,
+                    details=[{
+                        "field": "formats",
+                        "message": f"不支持的导出格式: {list(invalid_formats)}，有效选项: {list(valid_formats)}"
+                    }]
+                )
+            export_formats = requested_formats
+        else:
+            export_formats = list(valid_formats)
+        
+        logger.info(f"日报导出: 查询日期={query_date}, 导出格式={export_formats}")
+        
+        # 创建日报服务实例
+        daily_report_service = DailyReportService()
+        
+        # 执行导出
+        result = daily_report_service.export_daily_report(
+            db=db,
+            query_date=query_date,
+            export_formats=export_formats
+        )
+        
+        if result["success"]:
+            return create_success_response(
+                message=result["message"],
+                data={
+                    "report_data": result["data"],
+                    "files": result["files"],
+                    "export_formats": result["export_formats"],
+                    "query_date": result["query_date"]
+                }
+            )
+        else:
+            return create_error_response(
+                message=result["message"],
+                error_type=ErrorType.SERVER_ERROR,
+                code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details=[{
+                    "field": "export_process",
+                    "message": result.get("error", result["message"])
+                }]
+            )
+            
+    except Exception as e:
+        logger.error(f"导出日报失败: {str(e)}")
+        return create_error_response(
+            message=f"导出日报失败: {str(e)}",
             error_type=ErrorType.SERVER_ERROR,
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             details=[{

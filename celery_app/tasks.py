@@ -13,6 +13,7 @@ from schemas.sales import SalesRecordCreate
 from schemas.task import TaskUpdate
 from services.meituan_service import fetch_meituan_data
 from services.duowei_service import fetch_duowei_data
+from services.sales_target_service import SalesTargetService
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -107,6 +108,16 @@ def fetch_meituan_task(self, task_id: int, date: str = None, user_id: int = None
         reference_date = date or datetime.now().strftime("%Y-%m-%d")
         save_sales_records(data["data"], "meituan", reference_date)
         
+        # 更新月度销售目标
+        try:
+            target_result = SalesTargetService.update_monthly_targets(db, reference_date)
+            if target_result["success"]:
+                logger.info(f"美团任务完成后更新月目标成功: {target_result['message']}")
+            else:
+                logger.warning(f"美团任务完成后更新月目标失败: {target_result['message']}")
+        except Exception as target_error:
+            logger.error(f"美团任务完成后更新月目标时出错: {str(target_error)}")
+        
         # 更新任务状态
         update_task_status(task_id, "completed", 100, result=data)
         
@@ -144,6 +155,16 @@ def fetch_duowei_task(self, task_id: int, date: str = None, user_id: int = None)
         # 使用date作为默认日期，如果未提供则使用当前日期
         reference_date = date or datetime.now().strftime("%Y-%m-%d")
         save_sales_records(result["data"], "duowei", reference_date)
+        
+        # 更新月度销售目标
+        try:
+            target_result = SalesTargetService.update_monthly_targets(db, reference_date)
+            if target_result["success"]:
+                logger.info(f"多维任务完成后更新月目标成功: {target_result['message']}")
+            else:
+                logger.warning(f"多维任务完成后更新月目标失败: {target_result['message']}")
+        except Exception as target_error:
+            logger.error(f"多维任务完成后更新月目标时出错: {str(target_error)}")
         
         # 更新任务状态
         update_task_status(task_id, "completed", 100, result=result)
@@ -222,6 +243,16 @@ def fetch_all_data_task(self, task_id: int, date: str = None, user_id: int = Non
             save_sales_records(meituan_items, "meituan", reference_date)
         if duowei_items:
             save_sales_records(duowei_items, "duowei", reference_date)
+        
+        # 更新月度销售目标
+        try:
+            target_result = SalesTargetService.update_monthly_targets(db, reference_date)
+            if target_result["success"]:
+                logger.info(f"全平台任务完成后更新月目标成功: {target_result['message']}")
+            else:
+                logger.warning(f"全平台任务完成后更新月目标失败: {target_result['message']}")
+        except Exception as target_error:
+            logger.error(f"全平台任务完成后更新月目标时出错: {str(target_error)}")
         
         # 更新任务状态
         update_task_status(task_id, "completed", 100, result=all_data)

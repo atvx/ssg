@@ -756,3 +756,70 @@ def delete_ext_account(db: Session, account_id: int) -> bool:
     except Exception as e:
         db.rollback()
         raise e
+
+
+# 日报相关数据库操作
+def get_daily_sales_data(db: Session, query_date: str) -> List[Dict[str, Any]]:
+    """
+    获取指定日期的销售数据，用于生成日报
+    
+    Args:
+        db: 数据库会话
+        query_date: 查询日期，格式为 YYYY-MM-DD
+        
+    Returns:
+        List[Dict]: 销售数据列表
+    """
+    try:
+        from datetime import datetime
+        from sqlalchemy import text
+        
+        # 获取年月信息
+        date_obj = datetime.strptime(query_date, '%Y-%m-%d')
+        current_year = date_obj.year
+        current_month = date_obj.month
+        
+        # 构建SQL查询 - 使用text()来执行原生SQL
+        sql_query = text("""
+        SELECT 
+         c.id,
+         c.name,
+         t.car_count,
+         ROUND(s.income_amt, 0) AS daily_revenue,
+         ROUND(s.avg_income_amt, 0) AS daily_avg_revenue_cart,
+         s.sales_cart_count AS daily_cart_count,
+         ROUND(t.target_income, 0) AS target_income,
+         ROUND(t.actual_income, 0) AS actual_income,
+         t.ach_rate,
+         ROUND(t.per_car_income, 0) AS per_car_income,
+         t.sold_car_count,
+         p.id AS parent_id,
+         p.name AS parent_name,
+         p.sort AS p_sort,
+         c.sort AS c_sort
+        FROM orgs AS c
+        LEFT JOIN orgs AS p ON p.id = c.parent_id
+        LEFT JOIN sales_records s ON s.warehouse_name = c.name
+        LEFT JOIN sales_target t ON t.org_name = s.warehouse_name AND t.year = :current_year AND t.month = :current_month
+        WHERE c.org_type = 3 AND s.date = :query_date
+        ORDER BY p.sort ASC, c.sort ASC
+        """)
+        
+        result = db.execute(sql_query, {
+            'current_year': current_year,
+            'current_month': current_month,
+            'query_date': query_date
+        })
+        
+        # 将结果转换为字典列表
+        columns = result.keys()
+        rows = result.fetchall()
+        
+        return [dict(zip(columns, row)) for row in rows]
+        
+    except SQLAlchemyError as e:
+        logger.error(f"获取日报销售数据数据库错误: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"获取日报销售数据失败: {str(e)}")
+        raise

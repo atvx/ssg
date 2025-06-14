@@ -2,10 +2,23 @@ import redis
 import json
 import uuid
 import time
+import socket
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime, timedelta
 from redis import ConnectionPool
 from config.settings import settings
+
+# 构建socket_keepalive_options，检查系统支持
+keepalive_options = {}
+try:
+    if hasattr(socket, 'TCP_KEEPIDLE'):
+        keepalive_options[socket.TCP_KEEPIDLE] = 1
+    if hasattr(socket, 'TCP_KEEPINTVL'):
+        keepalive_options[socket.TCP_KEEPINTVL] = 3
+    if hasattr(socket, 'TCP_KEEPCNT'):
+        keepalive_options[socket.TCP_KEEPCNT] = 5
+except AttributeError:
+    pass  # 当前系统不支持TCP keep-alive选项
 
 # Redis连接池配置
 REDIS_POOL = ConnectionPool.from_url(
@@ -15,7 +28,7 @@ REDIS_POOL = ConnectionPool.from_url(
     socket_timeout=60,      # 增加socket超时时间到60秒
     socket_connect_timeout=10,  # 增加连接超时时间到10秒
     socket_keepalive=True,    # 保持连接
-    socket_keepalive_options={"TCP_KEEPIDLE": 1, "TCP_KEEPINTVL": 3, "TCP_KEEPCNT": 5},  # TCP保活参数
+    socket_keepalive_options=keepalive_options if keepalive_options else None,  # TCP保活参数
     health_check_interval=60,  # 健康检查间隔改为60秒
     retry_on_timeout=True,    # 超时时重试
     retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]  # 连接和超时错误时重试

@@ -180,6 +180,7 @@ docker-compose exec api alembic upgrade head
 - `POST /api/sales/fetch` - 触发数据获取任务
 - `GET /api/sales/platforms` - 获取支持的数据平台列表
 - `GET /api/sales/warehouses` - 获取所有仓库列表
+- `GET /api/sales/daily-report/export` - 导出日报（Excel/PDF/PNG格式）
 
 ### 任务管理
 

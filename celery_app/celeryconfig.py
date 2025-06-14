@@ -10,11 +10,7 @@ broker_transport_options = {
     'socket_timeout': 60,         # socket超时 - 增加到60秒
     'socket_connect_timeout': 10,  # 连接超时 - 增加到10秒
     'socket_keepalive': True,    # 保持连接
-    'socket_keepalive_options': {  # TCP保活参数
-        'TCP_KEEPIDLE': 1,
-        'TCP_KEEPINTVL': 3,
-        'TCP_KEEPCNT': 5,
-    },
+    # 移除socket_keepalive_options以避免兼容性问题
     'max_connections': 20,       # 最大连接数 - 增加到20
     'retry_on_timeout': True,    # 超时重试
     'retry_on_error': ['redis.ConnectionError', 'redis.TimeoutError'],  # 重试错误类型

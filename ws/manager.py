@@ -7,6 +7,7 @@ import asyncio
 from utils.redis_utils import redis_client, REDIS_BROADCAST_CHANNEL
 import redis
 import time
+import socket
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +36,25 @@ class ConnectionManager:
                 try:
                     # 创建独立的Redis连接用于pubsub，避免连接池冲突
                     from config.settings import settings
+                    # 构建socket_keepalive_options，检查系统支持
+                    keepalive_options = {}
+                    try:
+                        if hasattr(socket, 'TCP_KEEPIDLE'):
+                            keepalive_options[socket.TCP_KEEPIDLE] = 1
+                        if hasattr(socket, 'TCP_KEEPINTVL'):
+                            keepalive_options[socket.TCP_KEEPINTVL] = 3
+                        if hasattr(socket, 'TCP_KEEPCNT'):
+                            keepalive_options[socket.TCP_KEEPCNT] = 5
+                    except AttributeError:
+                        logger.warning("当前系统不支持TCP keep-alive选项")
+                    
                     pubsub_redis = redis.Redis.from_url(
                         settings.REDIS_URL,
                         decode_responses=True,
                         socket_timeout=None,  # pubsub不设置超时
                         socket_connect_timeout=10,
                         socket_keepalive=True,
-                        socket_keepalive_options={"TCP_KEEPIDLE": 1, "TCP_KEEPINTVL": 3, "TCP_KEEPCNT": 5},
+                        socket_keepalive_options=keepalive_options if keepalive_options else None,
                         retry_on_timeout=True,
                         retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]
                     )
