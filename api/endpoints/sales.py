@@ -190,7 +190,10 @@ def fetch_data_get(
                 # 只获取多维数据
                 task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
                 fetch_duowei_task.delay(task.id, date_str, user_id)
-            
+
+            # 更新月目标
+
+
             return create_success_response(
                 message=f"已启动{platform if platform else '全平台'}数据同步任务",
                 data={

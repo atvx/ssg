@@ -30,14 +30,8 @@ def get_connection():
         sys.exit(1)
 
 def format_percentage(value):
-    """将小数格式化为百分比字符串，使用Decimal确保精确计算"""
-    if pd.notna(value):
-        # 转换为Decimal并四舍五入到小数点后1位
-        dec_value = Decimal(str(value))
-        rounded = dec_value.quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
-        return f"{rounded:.1f}%"
-    else:
-        return "0.0%"
+    """将小数格式化为百分比字符串"""
+    return f"{value:.1f}%" if pd.notna(value) else "0.0%"
 
 def calculate_summary(warehouses_data):
     """计算仓库列表的汇总数据"""

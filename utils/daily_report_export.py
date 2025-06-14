@@ -1,4 +1,4 @@
-import subprocess
+import os, platform, shutil, subprocess
 from pathlib import Path
 from pdf2image import convert_from_path
 from openpyxl import load_workbook
@@ -42,21 +42,43 @@ def set_landscape(xlsx_path, sheetname=None):
 
     wb.save(xlsx_path)
 
-def xlsx_to_pdf(xlsx_path, pdf_path):
+def find_soffice() -> str:
+    """动态寻找 soffice"""
+    sys = platform.system()
+    candidates = []
+    if sys == "Windows":
+        candidates += [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        ]
+    elif sys == "Darwin":      # macOS
+        candidates += [
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+            shutil.which("soffice"),
+        ]
+    else:                       # Linux
+        candidates += [shutil.which("soffice"), shutil.which("libreoffice")]
+    for c in candidates:
+        if c and Path(c).exists():
+            return c
+    raise FileNotFoundError("无法找到 LibreOffice 的 soffice，可执行文件未安装或不在 PATH")
+
+def xlsx_to_pdf(xlsx_path: Path, pdf_path: Path):
     subprocess.run([
-        r"C:\Program Files\LibreOffice\program\soffice.exe",
-        "--headless",
+        find_soffice(), "--headless",
         "--convert-to", "pdf",
         "--outdir", str(pdf_path.parent),
         str(xlsx_path)
     ], check=True)
 
-def pdf_to_png(pdf_path, png_path):
-    pages = convert_from_path(
-        str(pdf_path),
-        dpi=200,
-        poppler_path=r"D:\Program Files\poppler-24.08.0\Library\bin"
-    )
+def get_poppler_path():
+    """仅 Windows 需显式 poppler_path"""
+    return (r"D:\Program Files\poppler-24.08.0\Library\bin"
+            if platform.system() == "Windows" else None)
+
+def pdf_to_png(pdf_path: Path, png_path: Path):
+    pages = convert_from_path(str(pdf_path), dpi=200,
+                              poppler_path=get_poppler_path())
     pages[0].save(str(png_path), "PNG")
 
 if __name__ == "__main__":
