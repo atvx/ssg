@@ -4,6 +4,8 @@ import subprocess
 import time
 import json
 import pickle
+import requests
+from typing import Dict, Any, Optional, Union
 
 
 def kill_chrome_processes():
@@ -205,3 +207,90 @@ def load_cookies(driver, filename):
     except Exception as e:
         print(f"加载cookies时出错: {e}")
         return False
+
+
+class FileUtils:
+    """文件工具类，提供文件上传等功能"""
+    
+    UPLOAD_URL = "https://pichub.8008893.workers.dev/upload"
+    TOKEN = "pic-EreLRazcAnLekI0ZieUBynQoJyAoMT8X"
+    
+    @classmethod
+    def upload_file(cls, file_path: str) -> Dict[str, Any]:
+        """
+        上传文件到图片服务器
+        
+        Args:
+            file_path: 文件的本地路径
+            
+        Returns:
+            Dict: 包含上传结果的字典，格式如下:
+            {
+                "success": true,
+                "filename": "xxx.jpg",
+                "url": "https://pichub.8008893.workers.dev/images/xxx.jpg",
+                "contentType": "image/jpeg",
+                "uploadedAt": "2025-06-15T06:42:36.176Z",
+                "originalName": "xxx.jpg",
+                "fileSize": 123456,
+                "uuid": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            }
+        
+        Raises:
+            FileNotFoundError: 如果文件不存在
+            Exception: 上传过程中的其他错误
+        """
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+        
+        # 准备请求头
+        headers = {
+            "Authorization": f"Bearer {cls.TOKEN}"
+        }
+        
+        # 准备文件表单数据
+        filename = os.path.basename(file_path)
+        files = {
+            "file": (filename, open(file_path, "rb"))
+        }
+        
+        try:
+            # 发送请求
+            response = requests.post(
+                cls.UPLOAD_URL, 
+                headers=headers, 
+                files=files
+            )
+            
+            # 关闭文件
+            files["file"][1].close()
+            
+            # 检查响应状态
+            response.raise_for_status()
+            
+            # 解析并返回响应
+            return response.json()
+        
+        except requests.RequestException as e:
+            raise Exception(f"上传文件失败: {str(e)}")
+    
+    @classmethod
+    def get_file_url(cls, file_path: str) -> Optional[str]:
+        """
+        上传文件并返回文件URL
+        
+        Args:
+            file_path: 文件的本地路径
+            
+        Returns:
+            str: 上传成功后的文件URL
+            None: 上传失败
+        """
+        try:
+            result = cls.upload_file(file_path)
+            if result.get("success"):
+                return result.get("url")
+            return None
+        except Exception:
+            return None

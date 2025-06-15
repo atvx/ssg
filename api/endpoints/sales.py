@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime, timedelta
 import logging
+import os
 
 from db.database import get_db
 from db.crud import (
@@ -27,6 +28,7 @@ from services.duowei_service import fetch_duowei_data
 from utils.response_utils import create_success_response, create_error_response
 from services.daily_report_service import DailyReportService
 from services.sales_target_service import SalesTargetService
+from utils.file_utils import FileUtils
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -591,19 +593,19 @@ def delete_sales_target(
 @router.get("/daily/export", summary="导出日报")
 def export_daily_report(
     date: Optional[str] = Query(None, description="查询日期（格式 YYYY-MM-DD），为空时默认为当前日期"),
-    formats: Optional[str] = Query("excel,pdf,png", description="导出格式，多个格式用逗号分隔，可选值：excel,pdf,png"),
+    file_type: str = Query("png", description="要返回的文件类型，可选值：excel,pdf,png，默认返回png链接"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    导出日报数据到各种格式
+    导出日报数据到各种格式并上传文件
     
     参数:
     - date: 查询日期（格式 YYYY-MM-DD），为空时默认为当前日期
-    - formats: 导出格式，多个格式用逗号分隔，可选值：excel,pdf,png，默认全部导出
+    - file_type: 要返回的文件类型，可选值：excel,pdf,png，默认返回png链接
     
     返回:
-    - 导出结果，包含数据和文件路径信息
+    - 导出结果，包含文件URL信息
     """
     try:
         # 处理日期参数
@@ -627,33 +629,26 @@ def export_daily_report(
             # 未提供日期参数，将在服务层使用当前日期
             logger.info("日报导出: 未提供日期参数，将使用当前日期")
         
-        # 处理导出格式参数
-        valid_formats = {"excel", "pdf", "png"}
-        if formats:
-            # 解析格式字符串
-            requested_formats = [f.strip().lower() for f in formats.split(",")]
-            # 验证格式
-            invalid_formats = set(requested_formats) - valid_formats
-            if invalid_formats:
-                return create_error_response(
-                    message=f"不支持的导出格式: {list(invalid_formats)}",
-                    error_type=ErrorType.VALIDATION_ERROR,
-                    code=status.HTTP_400_BAD_REQUEST,
-                    details=[{
-                        "field": "formats",
-                        "message": f"不支持的导出格式: {list(invalid_formats)}，有效选项: {list(valid_formats)}"
-                    }]
-                )
-            export_formats = requested_formats
-        else:
-            export_formats = list(valid_formats)
+        # 验证文件类型参数
+        valid_file_types = {"excel", "pdf", "png"}
+        if file_type not in valid_file_types:
+            return create_error_response(
+                message=f"不支持的文件类型: {file_type}",
+                error_type=ErrorType.VALIDATION_ERROR,
+                code=status.HTTP_400_BAD_REQUEST,
+                details=[{
+                    "field": "file_type",
+                    "message": f"不支持的文件类型: {file_type}，有效选项: {list(valid_file_types)}"
+                }]
+            )
         
-        logger.info(f"日报导出: 查询日期={query_date}, 导出格式={export_formats}")
+        logger.info(f"日报导出: 查询日期={query_date}, 文件类型={file_type}")
         
         # 创建日报服务实例
         daily_report_service = DailyReportService()
         
         # 执行导出
+        export_formats = ["excel", "pdf", "png"]
         result = daily_report_service.export_daily_report(
             db=db,
             query_date=query_date,
@@ -661,12 +656,32 @@ def export_daily_report(
         )
         
         if result["success"]:
+            # 获取文件路径
+            files = result.get("files", {})
+            
+            # 上传请求的文件类型
+            file_urls = {}
+            
+            for fmt in ["excel", "pdf", "png"]:
+                if fmt in files and os.path.exists(files[fmt]):
+                    try:
+                        # 上传文件并获取URL
+                        upload_result = FileUtils.upload_file(files[fmt])
+                        if upload_result and upload_result.get("success"):
+                            if fmt == "excel":
+                                file_urls["excel_url"] = upload_result.get("url", "")
+                            elif fmt == "pdf":
+                                file_urls["pdf_url"] = upload_result.get("url", "")
+                            elif fmt == "png":
+                                file_urls["img_url"] = upload_result.get("url", "")
+                    except Exception as e:
+                        logger.error(f"上传{fmt}文件失败: {str(e)}")
+                        file_urls[f"{fmt}_url"] = ""
+            
             return create_success_response(
                 message=result["message"],
                 data={
-                    "report_data": result["data"],
-                    "files": result["files"],
-                    "export_formats": result["export_formats"],
+                    "files": file_urls,
                     "query_date": result["query_date"]
                 }
             )
