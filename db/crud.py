@@ -439,8 +439,7 @@ def get_sales_targets(
     # 按年月和排序字段排序
     query = query.order_by(
         desc(models.MonthlySalesTarget.year), 
-        desc(models.MonthlySalesTarget.month),
-        models.MonthlySalesTarget.sort
+        desc(models.MonthlySalesTarget.month)
     )
     
     return query.offset(skip).limit(limit).all()
