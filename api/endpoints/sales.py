@@ -662,21 +662,26 @@ def export_daily_report(
             # 上传请求的文件类型
             file_urls = {}
             
-            for fmt in ["excel", "pdf", "png"]:
-                if fmt in files and os.path.exists(files[fmt]):
-                    try:
-                        # 上传文件并获取URL
-                        upload_result = FileUtils.upload_file(files[fmt])
-                        if upload_result and upload_result.get("success"):
-                            if fmt == "excel":
-                                file_urls["excel_url"] = upload_result.get("url", "")
-                            elif fmt == "pdf":
-                                file_urls["pdf_url"] = upload_result.get("url", "")
-                            elif fmt == "png":
-                                file_urls["img_url"] = upload_result.get("url", "")
-                    except Exception as e:
-                        logger.error(f"上传{fmt}文件失败: {str(e)}")
-                        file_urls[f"{fmt}_url"] = ""
+            # 只上传用户请求的文件类型
+            if file_type in files and os.path.exists(files[file_type]):
+                try:
+                    # 上传文件并获取URL
+                    upload_result = FileUtils.upload_file(files[file_type])
+                    if upload_result and upload_result.get("success"):
+                        if file_type == "excel":
+                            file_urls["excel_url"] = upload_result.get("url", "")
+                        elif file_type == "pdf":
+                            file_urls["pdf_url"] = upload_result.get("url", "")
+                        elif file_type == "png":
+                            file_urls["img_url"] = upload_result.get("url", "")
+                except Exception as e:
+                    logger.error(f"上传{file_type}文件失败: {str(e)}")
+                    if file_type == "excel":
+                        file_urls["excel_url"] = ""
+                    elif file_type == "pdf":
+                        file_urls["pdf_url"] = ""
+                    elif file_type == "png":
+                        file_urls["img_url"] = ""
             
             return create_success_response(
                 message=result["message"],

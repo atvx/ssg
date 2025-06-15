@@ -6,6 +6,7 @@ import json
 import pickle
 import requests
 from typing import Dict, Any, Optional, Union
+import mimetypes
 
 
 def kill_chrome_processes():
@@ -249,10 +250,26 @@ class FileUtils:
             "Authorization": f"Bearer {cls.TOKEN}"
         }
         
+        # 获取文件MIME类型
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if not mime_type:
+            # 如果无法确定MIME类型，根据扩展名设置默认值
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == '.xlsx':
+                mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            elif ext == '.pdf':
+                mime_type = 'application/pdf'
+            elif ext == '.png':
+                mime_type = 'image/png'
+            elif ext == '.jpg' or ext == '.jpeg':
+                mime_type = 'image/jpeg'
+            else:
+                mime_type = 'application/octet-stream'
+        
         # 准备文件表单数据
         filename = os.path.basename(file_path)
         files = {
-            "file": (filename, open(file_path, "rb"))
+            "file": (filename, open(file_path, "rb"), mime_type)
         }
         
         try:
