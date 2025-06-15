@@ -82,7 +82,6 @@ class MonthlySalesTarget(BaseModel):
     year: int = Field(..., description="年份", ge=2000, le=2100)
     month: int = Field(..., description="月份", ge=1, le=12)
     target_income: float = Field(..., description="目标收入")
-    sort: Optional[int] = Field(0, description="排序")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
@@ -96,7 +95,6 @@ class MonthlySalesTargetCreate(BaseModel):
     year: int = Field(..., description="年份", ge=2000, le=2100)
     month: int = Field(..., description="月份", ge=1, le=12)
     target_income: float = Field(..., description="目标收入", ge=0)
-    sort: Optional[int] = Field(0, description="排序")
 
 
 class MonthlySalesTargetUpdate(BaseModel):
@@ -105,7 +103,6 @@ class MonthlySalesTargetUpdate(BaseModel):
     year: Optional[int] = Field(None, description="年份", ge=2000, le=2100)
     month: Optional[int] = Field(None, description="月份", ge=1, le=12)
     target_income: Optional[float] = Field(None, description="目标收入", ge=0)
-    sort: Optional[int] = Field(None, description="排序")
 
 
 class MonthlySalesTargetResponse(BaseModel):

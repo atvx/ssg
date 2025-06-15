@@ -13,7 +13,6 @@ class MonthlySalesTarget(Base):
     year = Column(Integer, nullable=False)
     month = Column(Integer, nullable=False)
     target_income = Column(Numeric(18, 2), nullable=False)
-    sort = Column(Integer, default=0)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
