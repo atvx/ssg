@@ -22,6 +22,8 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecure
     xvfb \
     fonts-wqy-zenhei \
     fonts-noto-cjk \
+    fonts-noto-color-emoji \
+    ttf-ancient-fonts-symbola \
     locales \
     tzdata \
     ntpdate \
@@ -45,11 +47,15 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecure
     # 新增：日报导出功能依赖
     libreoffice \
     poppler-utils \
+    fontconfig \
+    libfontconfig1 \
     # 额外字体支持，确保Excel/PDF中文显示正常
     fonts-liberation \
     fonts-dejavu-core \
     && sed -i -e 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen \
     && locale-gen \
+    # 刷新字体缓存
+    && fc-cache -f -v \
     # 立即清理减少镜像大小
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -129,6 +135,9 @@ RUN echo '#!/bin/bash\n\
 # 同步时间\n\
 /usr/local/bin/sync_time\n\
 \n\
+# 确保字体缓存刷新\n\
+fc-cache -f -v\n\
+\n\
 # 启动虚拟显示服务器\n\
 Xvfb :99 -screen 0 1920x1080x24 -ac &\n\
 # 确保chrome_user_data目录存在并有正确权限\n\
@@ -147,6 +156,9 @@ python /usr/local/bin/redis_setup.py\n\
 # 设置环境变量\n\
 export PYTHONPATH=/app\n\
 export CHROME_OPTIONS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"\n\
+# LibreOffice 字体配置\n\
+export OOO_FORCE_DESKTOP=gnome\n\
+export SAL_USE_VCLPLUGIN=gen\n\
 # 执行命令\n\
 exec "$@"' > /usr/local/bin/entrypoint.sh && \
 chmod +x /usr/local/bin/entrypoint.sh

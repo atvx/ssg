@@ -34,6 +34,14 @@ def set_excel_landscape_format(xlsx_path: str, sheetname: str = None):
         # 内容水平居中
         ws.print_options.horizontalCentered = True
         
+        # 设置适当的页边距（单位：英寸）
+        ws.page_margins.left = 0.25
+        ws.page_margins.right = 0.25
+        ws.page_margins.top = 0.5
+        ws.page_margins.bottom = 0.5
+        ws.page_margins.header = 0.3
+        ws.page_margins.footer = 0.3
+        
         # 自动设置打印区域（所有已用单元格）
         min_row = ws.min_row
         max_row = ws.max_row
@@ -43,16 +51,17 @@ def set_excel_landscape_format(xlsx_path: str, sheetname: str = None):
         end_cell = ws.cell(row=max_row, column=max_col).coordinate
         ws.print_area = f"{start_cell}:{end_cell}"
         
-        # 修复A1:L1标题区右侧边框加粗问题
-        # 如果你的标题区不是A1:L1，请相应修改
-        right_title_cell = ws['L1']
-        # 用现有边框信息，右侧设为medium
-        right_title_cell.border = Border(
-            left=right_title_cell.border.left,
-            right=Side(style='medium'),
-            top=right_title_cell.border.top,
-            bottom=right_title_cell.border.bottom
-        )
+        # 修复标题区右侧边框加粗问题
+        # 确保标题行使用整行宽度
+        for col in range(1, max_col + 1):
+            cell = ws.cell(row=1, column=col)
+            if col == max_col:  # 最后一列
+                cell.border = Border(
+                    left=cell.border.left if cell.border else Side(style='thin'),
+                    right=Side(style='medium'),
+                    top=cell.border.top if cell.border else Side(style='thin'),
+                    bottom=cell.border.bottom if cell.border else Side(style='thin')
+                )
         
         wb.save(xlsx_path)
         logger.info(f"Excel文件格式设置完成: {xlsx_path}")
@@ -113,9 +122,11 @@ def convert_xlsx_to_pdf(xlsx_path: Path, output_dir: Path = None) -> Path:
         
         soffice_path = find_soffice_executable()
         
+        # 增强转换参数
         subprocess.run([
             soffice_path, "--headless",
-            "--convert-to", "pdf",
+            "--infilter=Calc8",
+            "--convert-to", "pdf:calc_pdf_Export:{'EmbedComplexScriptFonts':true,'EmbedFonts':true,'ExportNotes':false,'ScaleToPages':1,'SinglePageSheets':true}",
             "--outdir", str(output_dir),
             str(xlsx_path)
         ], check=True)
