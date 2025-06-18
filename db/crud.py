@@ -782,6 +782,7 @@ def get_daily_sales_data(db: Session, query_date: str) -> List[Dict[str, Any]]:
         SELECT 
          c.id,
          c.name,
+         c.status,
          t.car_count,
          ROUND(s.income_amt, 0) AS daily_revenue,
          ROUND(s.avg_income_amt, 0) AS daily_avg_revenue_cart,

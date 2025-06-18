@@ -190,14 +190,18 @@ class DailyReportService:
             
             # 处理每个仓库的数据
             for idx, row in enumerate(sorted_rows, 1):
+                # 检查仓库状态
+                status = row.get('status', 1)  # 默认为1(正常)
+                
                 warehouse = {
                     "id": idx,  # 在每个市场内的顺序ID
                     "name": row['name'],
-                    "car_count": int(row.get('car_count', 0)) if pd.notna(row.get('car_count')) else 0,
+                    "status": status,
+                    "car_count": 0 if status == 0 else (int(row.get('car_count', 0)) if pd.notna(row.get('car_count')) else 0),
                     "daily_revenue": int(row.get('daily_revenue', 0)) if pd.notna(row.get('daily_revenue')) else 0,
                     "daily_avg_revenue_cart": int(row.get('daily_avg_revenue_cart', 0)) if pd.notna(row.get('daily_avg_revenue_cart')) else 0,
                     "daily_cart_count": int(row.get('daily_cart_count', 0)) if pd.notna(row.get('daily_cart_count')) else 0,
-                    "target_income": int(row.get('target_income', 0)) if pd.notna(row.get('target_income')) else 0,
+                    "target_income": 0 if status == 0 else (int(row.get('target_income', 0)) if pd.notna(row.get('target_income')) else 0),
                     "actual_income": int(row.get('actual_income', 0)) if pd.notna(row.get('actual_income')) else 0,
                     "ach_rate": row.get('ach_rate_str', '0.0%'),
                     "per_car_income": int(row.get('per_car_income', 0)) if pd.notna(row.get('per_car_income')) else 0,
@@ -209,6 +213,13 @@ class DailyReportService:
             
             # 计算市场汇总数据
             market_data["summary"] = self.calculate_summary(market_data["warehouses"])
+            
+            # 移除状态为0的仓库并重新排序
+            active_warehouses = [w for w in market_data["warehouses"] if w.get('status', 1) != 0]
+            # 重新分配ID
+            for idx, warehouse in enumerate(active_warehouses, 1):
+                warehouse["id"] = idx
+            market_data["warehouses"] = active_warehouses
             
             result["markets"].append(market_data)
         
