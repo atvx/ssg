@@ -78,10 +78,16 @@ class DailySalesData(BaseModel):
 class MonthlySalesTarget(BaseModel):
     """月度销售目标模型"""
     id: Optional[int] = None
-    org_id: str = Field(..., description="组织ID", max_length=64)
+    org_id: str = Field(..., description="组织ID", max_length=50)
+    org_name: str = Field(..., description="组织名称", max_length=50)
     year: int = Field(..., description="年份", ge=2000, le=2100)
     month: int = Field(..., description="月份", ge=1, le=12)
     target_income: float = Field(..., description="目标收入")
+    car_count: Optional[int] = Field(None, description="车辆数量")
+    actual_income: Optional[float] = Field(None, description="实际收入")
+    ach_rate: Optional[float] = Field(None, description="达成率")
+    sold_car_count: Optional[int] = Field(None, description="销售车辆数量") 
+    per_car_income: Optional[float] = Field(None, description="车均收入")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
@@ -95,6 +101,7 @@ class MonthlySalesTargetCreate(BaseModel):
     year: int = Field(..., description="年份", ge=2000, le=2100)
     month: int = Field(..., description="月份", ge=1, le=12)
     target_income: float = Field(..., description="目标收入", ge=0)
+    car_count: Optional[int] = Field(None, description="车辆数量")
 
 
 class MonthlySalesTargetUpdate(BaseModel):
@@ -103,6 +110,11 @@ class MonthlySalesTargetUpdate(BaseModel):
     year: Optional[int] = Field(None, description="年份", ge=2000, le=2100)
     month: Optional[int] = Field(None, description="月份", ge=1, le=12)
     target_income: Optional[float] = Field(None, description="目标收入", ge=0)
+    car_count: Optional[int] = Field(None, description="车辆数量")
+    actual_income: Optional[float] = Field(None, description="实际收入", ge=0)
+    ach_rate: Optional[float] = Field(None, description="达成率", ge=0)
+    sold_car_count: Optional[int] = Field(None, description="销售车辆数量")
+    per_car_income: Optional[float] = Field(None, description="车均收入", ge=0)
 
 
 class MonthlySalesTargetResponse(BaseModel):

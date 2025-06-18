@@ -408,7 +408,8 @@ def create_monthly_sales_target(db: Session, target: MonthlySalesTargetCreate) -
         org_id=target.org_id,
         year=target.year,
         month=target.month,
-        target_income=target.target_income
+        target_income=target.target_income,
+        car_count=target.car_count
     )
     db.add(db_target)
     db.commit()

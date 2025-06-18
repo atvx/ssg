@@ -9,10 +9,16 @@ class MonthlySalesTarget(Base):
     __tablename__ = "sales_target"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    org_id = Column(String(64), index=True, nullable=False)
+    org_id = Column(String(50), index=True, nullable=False)
+    org_name = Column(String(50), nullable=False)
     year = Column(Integer, nullable=False)
     month = Column(Integer, nullable=False)
     target_income = Column(Numeric(18, 2), nullable=False)
+    car_count = Column(Integer, nullable=True)  # 车辆数量
+    actual_income = Column(Numeric(18, 2), nullable=True)  # 实际收入
+    ach_rate = Column(Numeric(3, 1), nullable=True)  # 达成率
+    sold_car_count = Column(Integer, nullable=True)  # 销售车辆数
+    per_car_income = Column(Numeric(18, 2), nullable=True)  # 车均收入
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 

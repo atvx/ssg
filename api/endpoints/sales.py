@@ -288,7 +288,7 @@ def create_sales_target(
     - year: 年份
     - month: 月份
     - target_income: 目标收入
-    - sort: 排序值，可选
+    - car_count: 车辆数量，可选
     
     返回:
     - 创建成功的销售目标信息
@@ -457,7 +457,11 @@ def update_sales_target(
     - year: 年份，可选
     - month: 月份，可选
     - target_income: 目标收入，可选
-    - sort: 排序值，可选
+    - car_count: 车辆数量，可选
+    - actual_income: 实际收入，可选
+    - ach_rate: 达成率，可选
+    - sold_car_count: 销售车辆数量，可选
+    - per_car_income: 车均收入，可选
     
     返回:
     - 更新后的销售目标信息
