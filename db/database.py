@@ -17,10 +17,10 @@ logger.info(f"使用的数据库URL: {DATABASE_URL}")
 # MySQL数据库连接配置
 engine = create_engine(
     DATABASE_URL,
-    pool_size=5,  # 连接池大小
-    max_overflow=10,  # 允许的最大溢出连接数
-    pool_timeout=30,  # 获取连接的超时时间
-    pool_recycle=3600,  # 连接回收时间（秒）
+    pool_size=20,  # 连接池大小从5增加到20
+    max_overflow=20,  # 允许的最大溢出连接数从10增加到20
+    pool_timeout=60,  # 获取连接的超时时间从30秒增加到60秒
+    pool_recycle=1800,  # 连接回收时间从3600秒降低到1800秒
     pool_pre_ping=True  # 使用ping测试连接是否有效
 )
 logger.info("已配置MySQL数据库连接")
@@ -36,4 +36,6 @@ def get_db():
     try:
         yield db
     finally:
+        # 确保在使用后关闭数据库连接
         db.close()
+        logger.debug("数据库连接已关闭")

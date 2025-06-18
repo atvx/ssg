@@ -48,7 +48,9 @@ def update_task_status(task_id: int, status: str, progress: int, result=None, er
         logger.error(f"更新任务状态失败: {str(e)}")
         return False
     finally:
+        # 确保关闭数据库连接
         db.close()
+        logger.debug(f"更新任务状态函数中的数据库连接已关闭 (task_id: {task_id})")
 
 
 # 保存销售记录到数据库
@@ -68,8 +70,14 @@ def save_sales_records(records, platform, date_str):
                 avg_income_amt=record["avgIncomeAmt"]
             )
             create_or_update_sales_record(db, sales_record)
+    except Exception as e:
+        logger.error(f"保存销售记录失败: {str(e)}")
+        db.rollback()
+        raise e
     finally:
+        # 确保关闭数据库连接
         db.close()
+        logger.debug(f"保存销售记录函数中的数据库连接已关闭 (platform: {platform}, date: {date_str})")
 
 
 @celery_app.task(bind=True)
@@ -78,6 +86,8 @@ def fetch_meituan_task(self, task_id: int, date: str = None, user_id: int = None
     # 确保在函数内部可以访问datetime
     from datetime import datetime
     
+    # 创建数据库会话
+    db = None
     try:
         # 检查任务是否存在，如果不存在则提前返回
         if not update_task_status(task_id, "running", 10):
@@ -86,7 +96,7 @@ def fetch_meituan_task(self, task_id: int, date: str = None, user_id: int = None
         
         # 使用Meituan服务获取数据
         from services.meituan_service import fetch_meituan_data
-        db = next(get_db())
+        db = SessionLocal()
         
         # 获取任务对象，以便获取用户ID
         from db.crud import get_task
@@ -126,6 +136,11 @@ def fetch_meituan_task(self, task_id: int, date: str = None, user_id: int = None
         logger.error(f"获取美团数据失败: {str(e)}")
         update_task_status(task_id, "failed", 0, error=str(e))
         return {"status": "error", "error": str(e)}
+    finally:
+        # 确保关闭数据库连接
+        if db:
+            db.close()
+            logger.debug(f"美团任务中的数据库连接已关闭 (task_id: {task_id})")
 
 
 @celery_app.task(bind=True)
@@ -134,6 +149,8 @@ def fetch_duowei_task(self, task_id: int, date: str = None, user_id: int = None)
     # 确保在函数内部可以访问datetime
     from datetime import datetime
     
+    # 创建数据库会话
+    db = None
     try:
         # 检查任务是否存在，如果不存在则提前返回
         if not update_task_status(task_id, "running", 10):
@@ -142,7 +159,7 @@ def fetch_duowei_task(self, task_id: int, date: str = None, user_id: int = None)
         
         # 获取数据
         from services.duowei_service import fetch_duowei_data
-        db = next(get_db())
+        db = SessionLocal()
         result = fetch_duowei_data(date, db)
         update_task_status(task_id, "running", 50)
         
@@ -174,6 +191,11 @@ def fetch_duowei_task(self, task_id: int, date: str = None, user_id: int = None)
         logger.error(f"获取多维数据失败: {str(e)}")
         update_task_status(task_id, "failed", 0, error=str(e))
         return {"status": "error", "error": str(e)}
+    finally:
+        # 确保关闭数据库连接
+        if db:
+            db.close()
+            logger.debug(f"多维任务中的数据库连接已关闭 (task_id: {task_id})")
 
 
 @celery_app.task(bind=True)
@@ -182,6 +204,8 @@ def fetch_all_data_task(self, task_id: int, date: str = None, user_id: int = Non
     # 确保在函数内部可以访问datetime
     from datetime import datetime
     
+    # 创建数据库会话
+    db = None
     try:
         # 检查任务是否存在，如果不存在则提前返回
         if not update_task_status(task_id, "running", 10):
@@ -190,7 +214,7 @@ def fetch_all_data_task(self, task_id: int, date: str = None, user_id: int = Non
         
         # 获取任务对象，以便获取用户ID
         from db.crud import get_task
-        db = next(get_db())
+        db = SessionLocal()
         task = get_task(db, task_id)
         # 如果提供了user_id参数，优先使用它，否则使用任务中的用户ID
         task_user_id = user_id or (task.user_id if task else None)
@@ -249,16 +273,24 @@ def fetch_all_data_task(self, task_id: int, date: str = None, user_id: int = Non
             target_result = SalesTargetService.update_monthly_targets(db, reference_date)
             if target_result["success"]:
                 logger.info(f"全平台任务完成后更新月目标成功: {target_result['message']}")
+                all_data["target_update"] = {"success": True, "message": target_result["message"]}
             else:
                 logger.warning(f"全平台任务完成后更新月目标失败: {target_result['message']}")
+                all_data["target_update"] = {"success": False, "message": target_result["message"]}
         except Exception as target_error:
             logger.error(f"全平台任务完成后更新月目标时出错: {str(target_error)}")
+            all_data["target_update"] = {"success": False, "error": str(target_error)}
         
         # 更新任务状态
         update_task_status(task_id, "completed", 100, result=all_data)
         
         return {"status": "success", "data": all_data}
     except Exception as e:
-        logger.error(f"获取所有平台数据失败: {str(e)}")
+        logger.error(f"获取全平台数据失败: {str(e)}")
         update_task_status(task_id, "failed", 0, error=str(e))
         return {"status": "error", "error": str(e)}
+    finally:
+        # 确保关闭数据库连接
+        if db:
+            db.close() 
+            logger.debug(f"全平台任务中的数据库连接已关闭 (task_id: {task_id})")

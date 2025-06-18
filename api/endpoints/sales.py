@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 import logging
 import os
 
-from db.database import get_db
+from db.database import get_db, SessionLocal
 from db.crud import (
     create_task, get_warehouses, 
     create_monthly_sales_target, get_sales_targets,
@@ -144,6 +144,50 @@ def fetch_data_get(
                         logger.error(f"同步模式全平台数据获取完成后更新月目标时出错: {str(target_error)}")
                         all_data["target_update"] = {"success": False, "error": str(target_error)}
                     
+                    # 保存销售记录
+                    local_db = SessionLocal()
+                    try:
+                        # 保存美团数据
+                        meituan_data = meituan_result.get("data", [])
+                        if meituan_data:
+                            for record in meituan_data:
+                                from schemas.sales import SalesRecordCreate
+                                from db.crud import create_or_update_sales_record
+                                
+                                sales_record = SalesRecordCreate(
+                                    date=date.fromisoformat(date_str),
+                                    platform="meituan",
+                                    warehouse_name=record["name"],
+                                    income_amt=record["incomeAmt"],
+                                    sales_cart_count=record["salesCartCount"],
+                                    avg_income_amt=record["avgIncomeAmt"]
+                                )
+                                create_or_update_sales_record(local_db, sales_record)
+                            
+                        # 保存多维数据
+                        duowei_data = duowei_result.get("data", [])
+                        if duowei_data:
+                            for record in duowei_data:
+                                from schemas.sales import SalesRecordCreate
+                                from db.crud import create_or_update_sales_record
+                                
+                                sales_record = SalesRecordCreate(
+                                    date=date.fromisoformat(date_str),
+                                    platform="duowei",
+                                    warehouse_name=record["name"],
+                                    income_amt=record["incomeAmt"],
+                                    sales_cart_count=record["salesCartCount"],
+                                    avg_income_amt=record["avgIncomeAmt"]
+                                )
+                                create_or_update_sales_record(local_db, sales_record)
+                    except Exception as e:
+                        logger.error(f"同步模式保存销售记录失败: {str(e)}")
+                        local_db.rollback()
+                    finally:
+                        # 确保关闭数据库连接
+                        local_db.close()
+                        logger.debug("同步模式下保存销售记录的数据库连接已关闭")
+                    
                     return create_success_response(
                         message="全平台数据获取完成",
                         data=all_data
@@ -167,6 +211,32 @@ def fetch_data_get(
                         except Exception as target_error:
                             logger.error(f"同步模式美团数据获取完成后更新月目标时出错: {str(target_error)}")
                             result["target_update"] = {"success": False, "error": str(target_error)}
+                        
+                        # 保存美团数据
+                        local_db = SessionLocal()
+                        try:
+                            meituan_data = result.get("data", [])
+                            if meituan_data:
+                                for record in meituan_data:
+                                    from schemas.sales import SalesRecordCreate
+                                    from db.crud import create_or_update_sales_record
+                                    
+                                    sales_record = SalesRecordCreate(
+                                        date=date.fromisoformat(date_str),
+                                        platform="meituan",
+                                        warehouse_name=record["name"],
+                                        income_amt=record["incomeAmt"],
+                                        sales_cart_count=record["salesCartCount"],
+                                        avg_income_amt=record["avgIncomeAmt"]
+                                    )
+                                    create_or_update_sales_record(local_db, sales_record)
+                        except Exception as e:
+                            logger.error(f"同步模式保存美团销售记录失败: {str(e)}")
+                            local_db.rollback()
+                        finally:
+                            # 确保关闭数据库连接
+                            local_db.close()
+                            logger.debug("同步模式下保存美团销售记录的数据库连接已关闭")
                         
                         return create_success_response(
                             message="美团数据获取成功",
@@ -202,6 +272,32 @@ def fetch_data_get(
                             logger.error(f"同步模式多维数据获取完成后更新月目标时出错: {str(target_error)}")
                             result["target_update"] = {"success": False, "error": str(target_error)}
                         
+                        # 保存多维数据
+                        local_db = SessionLocal()
+                        try:
+                            duowei_data = result.get("data", [])
+                            if duowei_data:
+                                for record in duowei_data:
+                                    from schemas.sales import SalesRecordCreate
+                                    from db.crud import create_or_update_sales_record
+                                    
+                                    sales_record = SalesRecordCreate(
+                                        date=date.fromisoformat(date_str),
+                                        platform="duowei",
+                                        warehouse_name=record["name"],
+                                        income_amt=record["incomeAmt"],
+                                        sales_cart_count=record["salesCartCount"],
+                                        avg_income_amt=record["avgIncomeAmt"]
+                                    )
+                                    create_or_update_sales_record(local_db, sales_record)
+                        except Exception as e:
+                            logger.error(f"同步模式保存多维销售记录失败: {str(e)}")
+                            local_db.rollback()
+                        finally:
+                            # 确保关闭数据库连接
+                            local_db.close()
+                            logger.debug("同步模式下保存多维销售记录的数据库连接已关闭")
+                        
                         return create_success_response(
                             message="多维数据获取成功",
                             data=result
@@ -220,57 +316,45 @@ def fetch_data_get(
                 # 异步执行模式 - 使用Celery任务队列
                 logger.info(f"异步模式: 创建{platform if platform else '全平台'}数据同步任务")
                 
-            task = None
-            if not platform:
-                # 获取所有平台数据
-                task = create_task(db, TaskCreate(task_type="fetch_all"), current_user.id)
-                fetch_all_data_task.delay(task.id, date_str, user_id)
-            elif platform == "meituan":
-                # 只获取美团数据
-                task = create_task(db, TaskCreate(task_type="fetch_meituan"), current_user.id)
-                fetch_meituan_task.delay(task.id, date_str, user_id)
-            elif platform == "duowei":
-                # 只获取多维数据
-                task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
-                fetch_duowei_task.delay(task.id, date_str, user_id)
-
-
-
-            return create_success_response(
-                message=f"已启动{platform if platform else '全平台'}数据同步任务",
-                data={
-                    "task_id": task.id,
-                    "status": task.status,
-                    "created_at": task.created_at.isoformat() if task.created_at else None,
-                    "date": date_str,
+                task = None
+                if not platform:
+                    # 获取所有平台数据
+                    task = create_task(db, TaskCreate(task_type="fetch_all"), current_user.id)
+                    fetch_all_data_task.delay(task.id, date_str, user_id)
+                elif platform == "meituan":
+                    # 只获取美团数据
+                    task = create_task(db, TaskCreate(task_type="fetch_meituan"), current_user.id)
+                    fetch_meituan_task.delay(task.id, date_str, user_id)
+                elif platform == "duowei":
+                    # 只获取多维数据
+                    task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
+                    fetch_duowei_task.delay(task.id, date_str, user_id)
+                
+                return create_success_response(
+                    message=f"已启动{platform if platform else '全平台'}数据同步任务",
+                    data={
+                        "task_id": task.id,
+                        "status": task.status,
+                        "created_at": task.created_at.isoformat() if task.created_at else None,
+                        "date": date_str,
                         "user_id": user_id,
                         "execution_mode": "async",
                         "status_check_url": f"/api/tasks/status/{task.id}"
-                }
-            )
+                    }
+                )
+                
         except ValueError as e:
             return create_error_response(
                 message=str(e),
                 error_type=ErrorType.VALIDATION_ERROR,
-                code=status.HTTP_400_BAD_REQUEST,
-                details=[{
-                    "field": "date" if "日期" in str(e) else 
-                            "platform" if "平台" in str(e) else
-                            "request_params",
-                    "message": str(e)
-                }]
+                code=status.HTTP_400_BAD_REQUEST
             )
-            
     except Exception as e:
-        logger.error(f"启动数据同步任务失败: {str(e)}")
+        logger.error(f"数据同步请求处理失败: {str(e)}")
         return create_error_response(
-            message=f"启动数据同步任务失败: {str(e)}",
+            message=f"数据同步请求处理失败: {str(e)}",
             error_type=ErrorType.SERVER_ERROR,
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details=[{
-                "field": "system",
-                "message": str(e)
-            }]
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 # 月度销售目标相关接口
@@ -285,6 +369,7 @@ def create_sales_target(
     
     参数:
     - org_id: 组织ID
+    - org_name: 组织名称
     - year: 年份
     - month: 月份
     - target_income: 目标收入

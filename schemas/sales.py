@@ -98,6 +98,7 @@ class MonthlySalesTarget(BaseModel):
 class MonthlySalesTargetCreate(BaseModel):
     """创建月度销售目标请求模型"""
     org_id: str = Field(..., description="组织ID", max_length=64)
+    org_name: str = Field(..., description="组织名称", max_length=64)
     year: int = Field(..., description="年份", ge=2000, le=2100)
     month: int = Field(..., description="月份", ge=1, le=12)
     target_income: float = Field(..., description="目标收入", ge=0)

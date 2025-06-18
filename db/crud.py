@@ -406,10 +406,15 @@ def create_monthly_sales_target(db: Session, target: MonthlySalesTargetCreate) -
     """创建新的月度销售目标"""
     db_target = models.MonthlySalesTarget(
         org_id=target.org_id,
+        org_name=target.org_name if hasattr(target, 'org_name') else None,
         year=target.year,
         month=target.month,
         target_income=target.target_income,
-        car_count=target.car_count
+        car_count=target.car_count,
+        actual_income=0,
+        ach_rate=0,
+        sold_car_count=0,
+        per_car_income=0
     )
     db.add(db_target)
     db.commit()
