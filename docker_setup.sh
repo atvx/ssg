@@ -18,7 +18,7 @@ echo "=== 1. 创建环境变量文件 ==="
 if [ ! -f .env ]; then
     cat > .env << EOF
 # 安全配置
-SECRET_KEY=your-secret-key-for-development-only
+SECRET_KEY=QIAN
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
