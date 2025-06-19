@@ -56,13 +56,13 @@ def update_task_status(task_id: int, status: str, progress: int, result=None, er
 # 保存销售记录到数据库
 def save_sales_records(records, platform, date_str):
     # 确保在函数内部可以访问date
-    from datetime import date
+    from datetime import date as date_type
     
     db = SessionLocal()
     try:
         for record in records:
             sales_record = SalesRecordCreate(
-                date=date.fromisoformat(date_str),
+                date=date_type.fromisoformat(date_str),
                 platform=platform,
                 warehouse_name=record["name"],
                 income_amt=record["incomeAmt"],

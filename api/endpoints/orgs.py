@@ -50,7 +50,9 @@ def get_orgs(
                 org_name=org['org_name'],
                 org_type=org['org_type'],
                 parent_id=org['parent_id'],
-                sort=org['sort']
+                parent_name=org['parent_name'],
+                sort=org['sort'],
+                status=org['status']
             )
             org_items.append(org_item)
         
@@ -106,7 +108,9 @@ def get_org_detail(
             name=org.name,
             org_type=org.org_type,
             parent_id=org.parent_id,
-            sort=org.sort
+            parent_name=org.parent_name,
+            sort=org.sort,
+            status=org.status
         )
         
         return create_success_response(
@@ -170,7 +174,9 @@ def add_org(
                 name=new_org.name,
                 org_type=new_org.org_type,
                 parent_id=new_org.parent_id,
-                sort=new_org.sort
+                parent_name=new_org.parent_name,
+                sort=new_org.sort,
+                status=new_org.status
             )
             
             return create_success_response(
@@ -260,7 +266,9 @@ def update_org_info(
                 name=updated_org.name,
                 org_type=updated_org.org_type,
                 parent_id=updated_org.parent_id,
-                sort=updated_org.sort
+                parent_name=updated_org.parent_name,
+                sort=updated_org.sort,
+                status=updated_org.status
             )
             
             return create_success_response(

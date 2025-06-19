@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status, Path
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
-from datetime import date, datetime, timedelta
+from datetime import date as date_type, datetime, timedelta
 import logging
 import os
 
@@ -155,7 +155,7 @@ def fetch_data_get(
                                 from db.crud import create_or_update_sales_record
                                 
                                 sales_record = SalesRecordCreate(
-                                    date=date.fromisoformat(date_str),
+                                    date=date_type.fromisoformat(date_str),
                                     platform="meituan",
                                     warehouse_name=record["name"],
                                     income_amt=record["incomeAmt"],
@@ -172,7 +172,7 @@ def fetch_data_get(
                                 from db.crud import create_or_update_sales_record
                                 
                                 sales_record = SalesRecordCreate(
-                                    date=date.fromisoformat(date_str),
+                                    date=date_type.fromisoformat(date_str),
                                     platform="duowei",
                                     warehouse_name=record["name"],
                                     income_amt=record["incomeAmt"],
@@ -222,7 +222,7 @@ def fetch_data_get(
                                     from db.crud import create_or_update_sales_record
                                     
                                     sales_record = SalesRecordCreate(
-                                        date=date.fromisoformat(date_str),
+                                        date=date_type.fromisoformat(date_str),
                                         platform="meituan",
                                         warehouse_name=record["name"],
                                         income_amt=record["incomeAmt"],
@@ -282,7 +282,7 @@ def fetch_data_get(
                                     from db.crud import create_or_update_sales_record
                                     
                                     sales_record = SalesRecordCreate(
-                                        date=date.fromisoformat(date_str),
+                                        date=date_type.fromisoformat(date_str),
                                         platform="duowei",
                                         warehouse_name=record["name"],
                                         income_amt=record["incomeAmt"],

@@ -508,13 +508,22 @@ def create_org(db: Session, org: org_schema.OrgCreate):
     if existing_id:
         raise ValueError(f"机构ID '{org.id}' 已被使用")
     
+    # 获取父级机构名称（如果存在父级机构）
+    parent_name = None
+    if org.parent_id:
+        parent_org = get_org(db, org.parent_id)
+        if parent_org:
+            parent_name = parent_org.name
+    
     # 创建机构对象，只包含允许的字段
     db_org = models.Org(
         id=org.id,
         name=org.name,
         org_type=org.org_type,
         parent_id=org.parent_id,
+        parent_name=parent_name,
         sort=org.sort,
+        status=1,  # 默认启用状态
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -538,7 +547,13 @@ def update_org(db: Session, org_id: str, org: org_schema.OrgUpdate):
     
     # 只更新允许的字段
     update_data = org.dict(exclude_unset=True)
-    allowed_fields = {"name", "org_type", "parent_id", "sort"}
+    allowed_fields = {"name", "org_type", "parent_id", "sort", "status"}
+    
+    # 如果更新了parent_id，需要更新parent_name
+    if "parent_id" in update_data and update_data["parent_id"]:
+        parent_org = get_org(db, update_data["parent_id"])
+        if parent_org:
+            db_org.parent_name = parent_org.name
     
     for key, value in update_data.items():
         if key in allowed_fields:
@@ -580,7 +595,7 @@ def get_org_list(db: Session, skip: int = 0, limit: int = 100, org_types: Option
         org_types: 机构类型列表，支持多选，默认为None表示不过滤
         
     返回:
-        List[Dict]: 机构列表，每个元素包含org_id, org_name, org_type, parent_id, sort字段
+        List[Dict]: 机构列表，每个元素包含org_id, org_name, org_type, parent_id, parent_name, sort, status字段
     """
     try:
         # 使用SQLAlchemy的查询
@@ -590,7 +605,9 @@ def get_org_list(db: Session, skip: int = 0, limit: int = 100, org_types: Option
             models.Org.name.label('org_name'),
             models.Org.org_type,
             models.Org.parent_id,
-            models.Org.sort
+            models.Org.parent_name,
+            models.Org.sort,
+            models.Org.status
         )
         
         # 应用org_types过滤条件
@@ -615,7 +632,9 @@ def get_org_list(db: Session, skip: int = 0, limit: int = 100, org_types: Option
                 'org_name': row.org_name,
                 'org_type': row.org_type,
                 'parent_id': row.parent_id,
-                'sort': row.sort
+                'parent_name': row.parent_name,
+                'sort': row.sort,
+                'status': row.status
             }
             orgs.append(org_dict)
         

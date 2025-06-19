@@ -9,7 +9,9 @@ class OrgBase(BaseModel):
     name: Optional[str] = Field(None, description="机构名称")
     org_type: Optional[int] = Field(None, description="机构类型")
     parent_id: Optional[str] = Field(None, description="父级机构ID")
+    parent_name: Optional[str] = Field(None, description="父级机构名称")
     sort: Optional[int] = Field(None, description="排序")
+    status: Optional[int] = Field(1, description="状态（0禁用/1正常）")
 
 
 class OrgCreate(BaseModel):
@@ -19,6 +21,7 @@ class OrgCreate(BaseModel):
     org_type: Optional[int] = Field(None, description="机构类型")
     parent_id: Optional[str] = Field(None, description="父级机构ID")
     sort: Optional[int] = Field(0, description="排序")
+    status: Optional[int] = Field(1, description="状态（0禁用/1正常）")
 
 
 class OrgUpdate(BaseModel):
@@ -27,6 +30,7 @@ class OrgUpdate(BaseModel):
     org_type: Optional[int] = Field(None, description="机构类型")
     parent_id: Optional[str] = Field(None, description="父级机构ID")
     sort: Optional[int] = Field(None, description="排序")
+    status: Optional[int] = Field(None, description="状态（0禁用/1正常）")
 
 
 class OrgDetail(OrgBase):
@@ -41,7 +45,9 @@ class OrgListItem(BaseModel):
     org_name: Optional[str] = Field(None, description="机构名称")
     org_type: Optional[int] = Field(None, description="机构类型")
     parent_id: Optional[str] = Field(None, description="父级机构ID")
+    parent_name: Optional[str] = Field(None, description="父级机构名称")
     sort: Optional[int] = Field(None, description="排序")
+    status: Optional[int] = Field(None, description="状态（0禁用/1正常）")
     
     class Config:
         from_attributes = True
