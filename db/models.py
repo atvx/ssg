@@ -39,5 +39,7 @@ class Org(Base):
     sort = Column(Integer, nullable=True, comment="排序")
     platform = Column(String(20), nullable=True, comment="平台")
     status = Column(Integer, default=1, nullable=True, comment="状态（0禁用/1正常）")
+    per_car_target = Column(Integer, nullable=True, comment="车均目标")
+    cost_rate = Column(Numeric(3, 2), nullable=False, default=0, comment="成本率")
 
     children = relationship("Org", backref="parent", remote_side=[id]) 

@@ -345,11 +345,18 @@ def update_auth_session(db: Session, session_id: int, status: str, cookies: Opti
 
 # 任务相关操作
 def create_task(db: Session, task: task_schema.TaskCreate, user_id: int):
+    import json
+    
+    params_json = None
+    if task.params:
+        params_json = json.dumps(task.params)
+    
     db_task = Task(
         task_type=task.task_type,
         status="pending",
         progress=0,
-        user_id=user_id
+        user_id=user_id,
+        params=params_json
     )
     db.add(db_task)
     db.commit()
@@ -524,6 +531,8 @@ def create_org(db: Session, org: org_schema.OrgCreate):
         parent_name=parent_name,
         sort=org.sort,
         status=1,  # 默认启用状态
+        per_car_target=org.per_car_target,
+        cost_rate=org.cost_rate,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -547,7 +556,7 @@ def update_org(db: Session, org_id: str, org: org_schema.OrgUpdate):
     
     # 只更新允许的字段
     update_data = org.dict(exclude_unset=True)
-    allowed_fields = {"name", "org_type", "parent_id", "sort", "status"}
+    allowed_fields = {"name", "org_type", "parent_id", "sort", "status", "per_car_target", "cost_rate"}
     
     # 如果更新了parent_id，需要更新parent_name
     if "parent_id" in update_data and update_data["parent_id"]:
@@ -595,7 +604,7 @@ def get_org_list(db: Session, skip: int = 0, limit: int = 100, org_types: Option
         org_types: 机构类型列表，支持多选，默认为None表示不过滤
         
     返回:
-        List[Dict]: 机构列表，每个元素包含org_id, org_name, org_type, parent_id, parent_name, sort, status字段
+        List[Dict]: 机构列表，每个元素包含org_id, org_name, org_type, parent_id, parent_name, sort, status, per_car_target, cost_rate字段
     """
     try:
         # 使用SQLAlchemy的查询
@@ -607,7 +616,9 @@ def get_org_list(db: Session, skip: int = 0, limit: int = 100, org_types: Option
             models.Org.parent_id,
             models.Org.parent_name,
             models.Org.sort,
-            models.Org.status
+            models.Org.status,
+            models.Org.per_car_target,
+            models.Org.cost_rate
         )
         
         # 应用org_types过滤条件
@@ -634,7 +645,9 @@ def get_org_list(db: Session, skip: int = 0, limit: int = 100, org_types: Option
                 'parent_id': row.parent_id,
                 'parent_name': row.parent_name,
                 'sort': row.sort,
-                'status': row.status
+                'status': row.status,
+                'per_car_target': row.per_car_target,
+                'cost_rate': row.cost_rate
             }
             orgs.append(org_dict)
         

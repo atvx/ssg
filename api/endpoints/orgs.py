@@ -52,7 +52,9 @@ def get_orgs(
                 parent_id=org['parent_id'],
                 parent_name=org['parent_name'],
                 sort=org['sort'],
-                status=org['status']
+                status=org['status'],
+                per_car_target=org.get('per_car_target'),
+                cost_rate=org.get('cost_rate')
             )
             org_items.append(org_item)
         
@@ -110,7 +112,9 @@ def get_org_detail(
             parent_id=org.parent_id,
             parent_name=org.parent_name,
             sort=org.sort,
-            status=org.status
+            status=org.status,
+            per_car_target=org.per_car_target,
+            cost_rate=org.cost_rate
         )
         
         return create_success_response(
@@ -145,6 +149,8 @@ def add_org(
     - org_type: 机构类型 (可选)
     - parent_id: 父级机构ID (可选)
     - sort: 排序 (可选，默认0)
+    - per_car_target: 车均目标 (可选)
+    - cost_rate: 成本率 (可选，默认0)
     
     返回:
     - 创建成功的机构信息
@@ -176,7 +182,9 @@ def add_org(
                 parent_id=new_org.parent_id,
                 parent_name=new_org.parent_name,
                 sort=new_org.sort,
-                status=new_org.status
+                status=new_org.status,
+                per_car_target=new_org.per_car_target,
+                cost_rate=new_org.cost_rate
             )
             
             return create_success_response(
@@ -225,6 +233,8 @@ def update_org_info(
     - org_type: 机构类型 (可选)
     - parent_id: 父级机构ID (可选)
     - sort: 排序 (可选)
+    - per_car_target: 车均目标 (可选)
+    - cost_rate: 成本率 (可选)
     
     返回:
     - 更新后的机构信息
@@ -268,7 +278,9 @@ def update_org_info(
                 parent_id=updated_org.parent_id,
                 parent_name=updated_org.parent_name,
                 sort=updated_org.sort,
-                status=updated_org.status
+                status=updated_org.status,
+                per_car_target=updated_org.per_car_target,
+                cost_rate=updated_org.cost_rate
             )
             
             return create_success_response(

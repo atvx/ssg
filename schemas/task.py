@@ -10,7 +10,7 @@ class TaskBase(BaseModel):
 
 class TaskCreate(TaskBase):
     """任务创建模型"""
-    pass
+    params: Optional[Dict[str, Any]] = Field(None, description="任务参数，如查询日期等")
 
 
 class TaskUpdate(BaseModel):
@@ -19,7 +19,6 @@ class TaskUpdate(BaseModel):
     progress: Optional[int] = Field(None, description="任务进度")
     result: Optional[str] = Field(None, description="任务结果")
     error: Optional[str] = Field(None, description="错误信息")
-    completed_at: Optional[datetime] = Field(None, description="完成时间")
 
 
 class Task(TaskBase):
@@ -30,9 +29,9 @@ class Task(TaskBase):
     progress: int = Field(..., description="任务进度")
     result: Optional[str] = Field(None, description="任务结果")
     error: Optional[str] = Field(None, description="错误信息")
+    params: Optional[str] = Field(None, description="任务参数，存储为JSON字符串")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
-    completed_at: Optional[datetime] = Field(None, description="完成时间")
 
     class Config:
         from_attributes = True
@@ -45,6 +44,7 @@ class TaskStatus(BaseModel):
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
     result: Optional[str] = Field(None, description="任务结果")
+    params: Optional[str] = Field(None, description="任务参数")
 
     class Config:
         from_attributes = True

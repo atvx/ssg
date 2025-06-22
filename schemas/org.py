@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
+from decimal import Decimal
 
 
 class OrgBase(BaseModel):
@@ -12,6 +13,8 @@ class OrgBase(BaseModel):
     parent_name: Optional[str] = Field(None, description="父级机构名称")
     sort: Optional[int] = Field(None, description="排序")
     status: Optional[int] = Field(1, description="状态（0禁用/1正常）")
+    per_car_target: Optional[int] = Field(None, description="车均目标")
+    cost_rate: Optional[Decimal] = Field(0, description="成本率")
 
 
 class OrgCreate(BaseModel):
@@ -22,6 +25,8 @@ class OrgCreate(BaseModel):
     parent_id: Optional[str] = Field(None, description="父级机构ID")
     sort: Optional[int] = Field(0, description="排序")
     status: Optional[int] = Field(1, description="状态（0禁用/1正常）")
+    per_car_target: Optional[int] = Field(None, description="车均目标")
+    cost_rate: Optional[Decimal] = Field(0, description="成本率")
 
 
 class OrgUpdate(BaseModel):
@@ -31,6 +36,8 @@ class OrgUpdate(BaseModel):
     parent_id: Optional[str] = Field(None, description="父级机构ID")
     sort: Optional[int] = Field(None, description="排序")
     status: Optional[int] = Field(None, description="状态（0禁用/1正常）")
+    per_car_target: Optional[int] = Field(None, description="车均目标")
+    cost_rate: Optional[Decimal] = Field(None, description="成本率")
 
 
 class OrgDetail(OrgBase):
@@ -48,6 +55,8 @@ class OrgListItem(BaseModel):
     parent_name: Optional[str] = Field(None, description="父级机构名称")
     sort: Optional[int] = Field(None, description="排序")
     status: Optional[int] = Field(None, description="状态（0禁用/1正常）")
+    per_car_target: Optional[int] = Field(None, description="车均目标")
+    cost_rate: Optional[Decimal] = Field(None, description="成本率")
     
     class Config:
         from_attributes = True

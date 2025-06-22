@@ -168,8 +168,7 @@ class VerificationManager:
         """
         return cls.update_verification_status(task_id, {
             "code": code,
-            "status": "completed",
-            "completed_at": datetime.now().isoformat()
+            "status": "completed"
         })
     
     @classmethod

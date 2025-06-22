@@ -15,9 +15,9 @@ class Task(Base):
     progress = Column(Integer, default=0)
     result = Column(Text)  # 存储JSON格式的结果
     error = Column(Text)
+    params = Column(Text)  # 存储JSON格式的参数，如查询日期等
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    completed_at = Column(DateTime)
     
     # 与用户表关联
     user = relationship("User", back_populates="tasks")

@@ -316,18 +316,35 @@ def fetch_data_get(
                 # 异步执行模式 - 使用Celery任务队列
                 logger.info(f"异步模式: 创建{platform if platform else '全平台'}数据同步任务")
                 
+                # 准备任务参数
+                import json
+                task_params = {
+                    "date": date_str,
+                    "platform": platform if platform else "all",  # 如果为空存储为"all"而非null
+                    "user_id": user_id
+                }
+                
                 task = None
                 if not platform:
                     # 获取所有平台数据
-                    task = create_task(db, TaskCreate(task_type="fetch_all"), current_user.id)
+                    task = create_task(db, TaskCreate(
+                        task_type="fetch_all", 
+                        params=task_params
+                    ), current_user.id)
                     fetch_all_data_task.delay(task.id, date_str, user_id)
                 elif platform == "meituan":
                     # 只获取美团数据
-                    task = create_task(db, TaskCreate(task_type="fetch_meituan"), current_user.id)
+                    task = create_task(db, TaskCreate(
+                        task_type="fetch_meituan",
+                        params=task_params
+                    ), current_user.id)
                     fetch_meituan_task.delay(task.id, date_str, user_id)
                 elif platform == "duowei":
                     # 只获取多维数据
-                    task = create_task(db, TaskCreate(task_type="fetch_duowei"), current_user.id)
+                    task = create_task(db, TaskCreate(
+                        task_type="fetch_duowei",
+                        params=task_params
+                    ), current_user.id)
                     fetch_duowei_task.delay(task.id, date_str, user_id)
                 
                 return create_success_response(
