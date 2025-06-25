@@ -132,6 +132,9 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
             "MONITOR_SCOPES": [".*pos\\.meituan\\.com.*"]  # 匹配所有美团POS域名下的请求
         }
         
+        # 添加浏览器配置日志
+        logger.info(f"浏览器配置信息: HEADLESS={settings.HEADLESS}, USER_DATA_DIR={settings.CHROME_USER_DATA_DIR}")
+        
         # 使用配置字典初始化浏览器
         driver = init_chrome_driver(config=browser_config)
         

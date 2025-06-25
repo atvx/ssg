@@ -89,9 +89,14 @@ def test_browser_initialization():
     """测试浏览器初始化"""
     print("\n=== 浏览器初始化测试 ===")
     
+    # 从配置中读取无头模式设置
+    from config.settings import settings
+    headless = settings.HEADLESS
+    print(f"配置中的无头模式设置: HEADLESS={headless}")
+    
     # 测试配置
     config = {
-        "HEADLESS": True,  # 使用无头模式避免弹出窗口
+        "HEADLESS": headless,  # 使用配置中的无头模式设置
         "MONITOR_API_RESPONSE": False
     }
     

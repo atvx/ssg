@@ -644,27 +644,73 @@ def handle_phone_verification(driver, timeout=60):
             # 获取手机号
             phone_number = ""
             try:
-                # 使用更多方法尝试获取手机号
-                phone_selectors = [
-                    "//div[@id='popup-context']//span[contains(@class, '_sms__mobile')]",
-                    "//span[contains(@class, 'mobile')]", 
-                    "//div[contains(text(), '为了您的账户安全')]/following-sibling::div"
+                # 首先检查是否有iframe并切换到iframe
+                iframes = driver.find_elements(By.TAG_NAME, "iframe")
+                iframe_switched = False
+                if iframes:
+                    for iframe in iframes:
+                        try:
+                            driver.switch_to.frame(iframe)
+                            logger.info("切换到iframe以查找手机号")
+                            iframe_switched = True
+                            break
+                        except Exception as e:
+                            logger.warning(f"切换到iframe失败: {e}")
+                            continue
+                
+                # 添加更精确的选择器
+                precise_selectors = [
+                    "//span[contains(@class, '_sms__mobile___')]",
+                    "//div[contains(@class, '_sms__wrapper___')]//span",
+                    "//div[@id='yodaIntercode']//span[contains(@class, '_sms__mobile___')]"
                 ]
                 
-                for selector in phone_selectors:
+                # 先尝试精确选择器
+                for selector in precise_selectors:
                     try:
-                        phone_elem = driver.find_element(By.XPATH, selector)
+                        # 使用WebDriverWait等待元素出现
+                        phone_elem = WebDriverWait(driver, 3).until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
                         if phone_elem:
                             phone_text = phone_elem.text
-                            # 使用正则表达式提取手机号格式的文本
-                            import re
-                            matches = re.search(r'\d+[*\s]+\d+', phone_text)
-                            if matches:
-                                phone_number = matches.group()
-                                logger.info(f"找到手机号: {phone_number}")
+                            logger.info(f"通过精确选择器找到手机号文本: {phone_text}")
+                            phone_number = phone_text.strip()
+                            if phone_number:
+                                logger.info(f"成功获取到手机号: {phone_number}")
                                 break
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"使用选择器 {selector} 查找手机号失败: {e}")
                         continue
+                
+                # 如果精确选择器失败，使用原有的方法
+                if not phone_number:
+                    # 使用更多方法尝试获取手机号
+                    phone_selectors = [
+                        "//div[@id='popup-context']//span[contains(@class, '_sms__mobile')]",
+                        "//span[contains(@class, 'mobile')]", 
+                        "//div[contains(text(), '为了您的账户安全')]/following-sibling::div"
+                    ]
+                    
+                    for selector in phone_selectors:
+                        try:
+                            phone_elem = driver.find_element(By.XPATH, selector)
+                            if phone_elem:
+                                phone_text = phone_elem.text
+                                # 使用正则表达式提取手机号格式的文本
+                                import re
+                                matches = re.search(r'\d+[*\s]+\d+', phone_text)
+                                if matches:
+                                    phone_number = matches.group()
+                                    logger.info(f"找到手机号: {phone_number}")
+                                    break
+                        except Exception:
+                            continue
+                
+                # 如果需要，切换回主文档
+                if iframe_switched:
+                    driver.switch_to.default_content()
+                    logger.info("切换回主文档")
                 
                 # 如果XPath失败，使用JavaScript提取
                 if not phone_number:
@@ -692,6 +738,26 @@ def handle_phone_verification(driver, timeout=60):
                         return phoneMatches[0];
                     }
                     
+                    // 尝试iframe中的内容
+                    var iframes = document.querySelectorAll('iframe');
+                    for(var i=0; i<iframes.length; i++) {
+                        try {
+                            var iframeDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
+                            var iframeMobile = iframeDoc.querySelector('span[class*="_sms__mobile"]');
+                            if(iframeMobile) {
+                                return iframeMobile.textContent.trim();
+                            }
+                            var iframeText = iframeDoc.body.innerText;
+                            var iframeMatches = iframeText.match(/\\d{2,3}[\\*\\s]+\\d{2,4}/);
+                            if(iframeMatches) {
+                                return iframeMatches[0];
+                            }
+                        } catch(e) {
+                            // 跨域错误会被忽略
+                            console.log('无法访问iframe内容');
+                        }
+                    }
+                    
                     return "";
                     """)
                     if phone_number:
@@ -704,13 +770,25 @@ def handle_phone_verification(driver, timeout=60):
                     phone_matches = re.findall(r'\d{2,3}\*{3,}\d{2,3}', page_source)
                     if phone_matches:
                         phone_number = phone_matches[0]
+                        logger.info(f"从页面源代码提取到手机号: {phone_number}")
             except Exception as e:
                 logger.warning(f"获取手机号时出错: {e}")
             
             # 如果没有获取到手机号，使用备用值
             if not phone_number:
-                phone_number = "未知手机号"
-                logger.warning("未能获取到手机号，使用默认值")
+                # 从环境变量或设置中读取用户手机号
+                from config.settings import settings
+                if settings.MEITUAN_CONFIG.get("PHONE_NUMBER"):
+                    config_phone = settings.MEITUAN_CONFIG.get("PHONE_NUMBER")
+                    # 格式化为带星号的格式
+                    if len(config_phone) >= 11:
+                        phone_number = f"{config_phone[:3]}*****{config_phone[-3:]}"
+                        logger.info(f"使用配置中的手机号: {phone_number}")
+                    else:
+                        phone_number = "未知手机号"
+                else:
+                    phone_number = "未知手机号"
+                    logger.warning("未能获取到手机号，使用默认值")
             else:
                 phone_number = phone_number.strip()
             
@@ -779,39 +857,162 @@ def handle_phone_verification(driver, timeout=60):
                 
                 return False
             
+            # 获取到验证码，现在需要处理输入验证码和提交
+            logger.info(f"获取到验证码，现在需要处理输入和提交: {verification_code}")
+            
+            # 检查当前是否在iframe中，如果是需要确保回到正确的iframe或主文档
+            try:
+                # 先尝试切换回主文档
+                driver.switch_to.default_content()
+                logger.info("已切换回主文档，准备查找验证码输入框")
+                
+                # 检查页面上是否有验证码输入框，如果没有需要找到并切换到正确的iframe
+                input_exists = driver.execute_script("""
+                    return !!(document.querySelector('input[placeholder="请输入验证码"]') || 
+                             document.querySelector('#yodaVerification') || 
+                             document.querySelector('input.ep-input.ep-sms-input'));
+                """)
+                
+                if not input_exists:
+                    # 没找到输入框，尝试切换到所有iframe查找
+                    logger.info("主文档中未找到验证码输入框，尝试查找并切换iframe")
+                    iframes = driver.find_elements(By.TAG_NAME, "iframe")
+                    iframe_found = False
+                    
+                    for iframe in iframes:
+                        try:
+                            driver.switch_to.frame(iframe)
+                            # 检查当前iframe中是否有验证码输入框
+                            has_input = driver.execute_script("""
+                                return !!(document.querySelector('input[placeholder="请输入验证码"]') || 
+                                         document.querySelector('#yodaVerification') || 
+                                         document.querySelector('input.ep-input.ep-sms-input') ||
+                                         document.querySelector('input[type="number"]'));
+                            """)
+                            
+                            if has_input:
+                                logger.info("找到包含验证码输入框的iframe")
+                                iframe_found = True
+                                break
+                            else:
+                                # 切回主文档继续搜索
+                                driver.switch_to.default_content()
+                        except Exception as e:
+                            logger.warning(f"切换到iframe时出错: {e}")
+                            driver.switch_to.default_content()
+                    
+                    if not iframe_found:
+                        logger.warning("未找到包含验证码输入框的iframe，将尝试在主文档中操作")
+                        driver.switch_to.default_content()
+            except Exception as e:
+                logger.error(f"切换文档上下文时出错: {e}")
+                # 确保回到主文档
+                try:
+                    driver.switch_to.default_content()
+                except:
+                    pass
+
             # 输入验证码 - 使用多种方法确保成功
             submit_success = False
             
             # 尝试方法1: 直接使用Selenium方法
             try:
+                # 获取页面HTML以便调试
+                page_html = driver.page_source
+                logger.debug(f"当前页面HTML长度: {len(page_html)}")
+                
+                # 记录当前可见元素，帮助调试
+                visible_elements = driver.execute_script("""
+                    var results = [];
+                    var allElements = document.querySelectorAll('input, button');
+                    for (var i = 0; i < allElements.length; i++) {
+                        var el = allElements[i];
+                        if (el.offsetParent !== null) { // 元素可见
+                            results.push({
+                                tag: el.tagName,
+                                id: el.id,
+                                class: el.className,
+                                type: el.type,
+                                placeholder: el.placeholder
+                            });
+                        }
+                    }
+                    return results;
+                """)
+                logger.debug(f"当前可见的输入和按钮元素: {visible_elements}")
+                
                 # 重新查找验证码输入框
-                for selector in ["input[placeholder='请输入验证码']", "input.ep-input.ep-sms-input", "#yodaVerification"]:
+                input_selectors = [
+                    "input[placeholder='请输入验证码']", 
+                    "#yodaVerification", 
+                    "input.ep-input.ep-sms-input", 
+                    "input[type='number']"
+                ]
+                
+                for selector in input_selectors:
                     try:
-                        code_input = driver.find_element(By.CSS_SELECTOR, selector)
+                        code_input = WebDriverWait(driver, 3).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
                         if code_input:
                             # 清除并输入验证码
                             code_input.clear()
                             for char in verification_code:
                                 code_input.send_keys(char)
                                 time.sleep(0.1)
-                            logger.info(f"已使用Selenium输入验证码: {verification_code}")
+                            logger.info(f"已使用Selenium输入验证码: {verification_code} (使用选择器: {selector})")
                             
                             # 查找并点击提交按钮
-                            for btn_selector in ["#yodaSubmit", "button.submit-btn", "button.ep-button-primary", "button.submit"]:
+                            button_selectors = [
+                                "#yodaSubmit", 
+                                "button.submit-btn", 
+                                "button.ep-button-primary", 
+                                "button.submit",
+                                "button[type='submit']",
+                                "._sms__banAutoSubmit___IrETL",
+                                "button"
+                            ]
+                            
+                            for btn_selector in button_selectors:
                                 try:
-                                    submit_btn = driver.find_element(By.CSS_SELECTOR, btn_selector)
-                                    if submit_btn and submit_btn.is_displayed():
-                                        submit_btn.click()
-                                        logger.info(f"已点击提交按钮: {btn_selector}")
-                                        submit_success = True
-                                        time.sleep(2)
-                                        break
-                                except Exception:
+                                    # 使用JavaScript先检查按钮是否存在
+                                    button_exists = driver.execute_script(f"""
+                                        var btns = document.querySelectorAll('{btn_selector}');
+                                        return Array.from(btns).filter(b => b.textContent.includes('验证'));
+                                    """)
+                                    
+                                    if button_exists and len(button_exists) > 0:
+                                        # 使用WebDriverWait等待按钮可点击
+                                        submit_btn = WebDriverWait(driver, 3).until(
+                                            EC.element_to_be_clickable((By.CSS_SELECTOR, btn_selector))
+                                        )
+                                        if submit_btn and submit_btn.is_displayed():
+                                            # 先尝试使用JavaScript移除禁用状态
+                                            driver.execute_script("""
+                                                var btn = arguments[0];
+                                                btn.disabled = false;
+                                                btn.removeAttribute('disabled');
+                                                if (btn.className) {
+                                                    btn.className = btn.className.split(' ').filter(function(cls) {
+                                                        return !cls.includes('banAutoSubmit') && !cls.includes('disabled');
+                                                    }).join(' ');
+                                                }
+                                            """, submit_btn)
+                                            
+                                            # 点击按钮
+                                            submit_btn.click()
+                                            logger.info(f"已点击提交按钮: {btn_selector}")
+                                            submit_success = True
+                                            time.sleep(2)
+                                            break
+                                except Exception as e:
+                                    logger.warning(f"点击按钮 {btn_selector} 失败: {e}")
                                     continue
                             
                             if submit_success:
                                 break
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"使用选择器 {selector} 查找输入框失败: {e}")
                         continue
             except Exception as e:
                 logger.warning(f"使用Selenium方法输入验证码失败: {e}")
@@ -827,7 +1028,8 @@ def handle_phone_verification(driver, timeout=60):
                             '#yodaVerification',
                             'input[placeholder="请输入验证码"]',
                             'input.ep-input.ep-sms-input',
-                            'input[type="number"]'
+                            'input[type="number"]',
+                            '._sms__smsCodeInput___1_PXn'
                         ];
                         
                         var input = null;
@@ -837,7 +1039,33 @@ def handle_phone_verification(driver, timeout=60):
                         }}
                         
                         if (!input) {{
-                            return {{"success": false, "error": "找不到验证码输入框"}};
+                            // 尝试在所有iframe中查找
+                            var allIframes = document.querySelectorAll('iframe');
+                            var frameFound = false;
+                            
+                            for (var f = 0; f < allIframes.length; f++) {{
+                                try {{
+                                    var frameDoc = allIframes[f].contentDocument || allIframes[f].contentWindow.document;
+                                    
+                                    // 在iframe中查找输入框
+                                    for (var j = 0; j < selectors.length; j++) {{
+                                        input = frameDoc.querySelector(selectors[j]);
+                                        if (input) {{
+                                            frameFound = true;
+                                            break;
+                                        }}
+                                    }}
+                                    
+                                    if (frameFound) break;
+                                }} catch (err) {{
+                                    // 可能因为同源策略限制导致无法访问iframe内容
+                                    continue;
+                                }}
+                            }}
+                            
+                            if (!input) {{
+                                return {{"success": false, "error": "找不到验证码输入框"}};
+                            }}
                         }}
                         
                         // 设置验证码值
@@ -849,31 +1077,39 @@ def handle_phone_verification(driver, timeout=60):
                             input.dispatchEvent(event);
                         }});
                         
-                        // 找到验证按钮
+                        // 找到验证按钮 - 扩展选择器范围
                         var btnSelectors = [
                             '#yodaSubmit',
+                            '._sms__banAutoSubmit___IrETL',
+                            'button[class*="banAutoSubmit"]',
                             'button.submit-btn',
                             'button.ep-button-primary',
                             'button.submit',
-                            'button[type="submit"]'
+                            'button[type="submit"]',
+                            'button'
                         ];
                         
                         var btn = null;
                         for (var j = 0; j < btnSelectors.length; j++) {{
-                            btn = document.querySelector(btnSelectors[j]);
+                            var candidates = document.querySelectorAll(btnSelectors[j]);
+                            for (var c = 0; c < candidates.length; c++) {{
+                                if (candidates[c].textContent.includes('验证') || 
+                                    candidates[c].textContent.includes('确定') ||
+                                    candidates[c].textContent.includes('提交')) {{
+                                    btn = candidates[c];
+                                    break;
+                                }}
+                            }}
                             if (btn) break;
                         }}
                         
                         if (!btn) {{
-                            // 尝试找包含"验证"或"确定"文本的按钮
+                            // 如果找不到指定文本的按钮，就尝试任何按钮
                             var allButtons = document.querySelectorAll('button');
-                            for (var k = 0; k < allButtons.length; k++) {{
-                                if (allButtons[k].textContent.includes('验证') || 
-                                    allButtons[k].textContent.includes('确定') ||
-                                    allButtons[k].textContent.includes('提交')) {{
-                                    btn = allButtons[k];
-                                    break;
-                                }}
+                            if (allButtons.length > 0) {{
+                                // 优先选择表单内的最后一个按钮
+                                var formButtons = document.querySelectorAll('form button');
+                                btn = formButtons.length > 0 ? formButtons[formButtons.length - 1] : allButtons[0];
                             }}
                         }}
                         
@@ -911,75 +1147,6 @@ def handle_phone_verification(driver, timeout=60):
                         logger.warning(f"JavaScript处理验证码失败: {error_msg}")
                 except Exception as e:
                     logger.error(f"使用JavaScript处理验证码过程出错: {e}", exc_info=True)
-            
-            # 如果前两种方法都失败，尝试方法3: 更强的方法
-            if not submit_success:
-                try:
-                    driver.execute_script(f"""
-                    // 检测验证码框是否显示并准备好
-                    var readyForInput = function() {{
-                        var verifyBoxes = document.querySelectorAll('input[placeholder*="验证码"], #yodaVerification, input.ep-input.ep-sms-input');
-                        for (var i = 0; i < verifyBoxes.length; i++) {{
-                            if (verifyBoxes[i].offsetParent !== null) {{
-                                return true;
-                            }}
-                        }}
-                        return false;
-                    }};
-                    
-                    // 如果没准备好，等待最多5秒
-                    var startTime = new Date().getTime();
-                    var checkInterval = setInterval(function() {{
-                        if (readyForInput() || new Date().getTime() - startTime > 5000) {{
-                            clearInterval(checkInterval);
-                            
-                            // 直接操作DOM，强制输入验证码
-                            var inputs = document.querySelectorAll('input');
-                            for (var i = 0; i < inputs.length; i++) {{
-                                var input = inputs[i];
-                                if (input.offsetParent !== null && 
-                                    (input.placeholder && input.placeholder.includes('验证码') || 
-                                     input.id === 'yodaVerification' ||
-                                     input.type === 'number')) {{
-                                    // 强制设置值
-                                    input.value = '{verification_code}';
-                                    
-                                    // 触发事件
-                                    ['input', 'change', 'keyup', 'blur'].forEach(function(evt) {{
-                                        input.dispatchEvent(new Event(evt, {{ bubbles: true }}));
-                                    }});
-                                    
-                                    // 查找所有可能的提交按钮
-                                    setTimeout(function() {{
-                                        var buttons = document.querySelectorAll('button');
-                                        for (var j = 0; j < buttons.length; j++) {{
-                                            var btn = buttons[j];
-                                            if (btn.offsetParent !== null && 
-                                                (btn.textContent.includes('验证') || 
-                                                 btn.textContent.includes('确定') ||
-                                                 btn.textContent.includes('提交') ||
-                                                 btn.id === 'yodaSubmit')) {{
-                                                // 确保按钮可点击
-                                                btn.disabled = false;
-                                                btn.removeAttribute('disabled');
-                                                btn.className = btn.className.replace(/disabled/g, '');
-                                                btn.click();
-                                                break;
-                                            }}
-                                        }}
-                                    }}, 500);
-                                    
-                                    break;
-                                }}
-                            }}
-                        }}
-                    }}, 100);
-                    """)
-                    logger.info("已使用终极方法处理验证码")
-                    time.sleep(3)
-                    submit_success = True
-                except Exception as e:
-                    logger.error(f"使用终极方法处理验证码失败: {e}")
             
             # 完成任务，不管是否成功
             VerificationManager.update_verification_status(task_id, {

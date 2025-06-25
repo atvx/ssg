@@ -129,31 +129,34 @@ def download_chromedriver():
         
         print(f"正在获取ChromeDriver版本信息...")
         
-        # 对于Chrome 115+，使用新的Chrome for Testing API
-        if major_version >= 115:
-            api_url = f"https://googlechromelabs.github.io/chrome-for-testing/latest-patch-versions-per-milestone-with-downloads.json"
-            try:
-                response = requests.get(api_url, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    milestone_data = data.get('milestones', {}).get(str(major_version))
-                    if milestone_data and 'downloads' in milestone_data:
-                        chromedriver_downloads = milestone_data['downloads'].get('chromedriver', [])
-                        # 查找匹配的平台
-                        for download in chromedriver_downloads:
-                            if download['platform'] == platform_name_new:
-                                download_url = download['url']
-                                driver_version = milestone_data['version']
-                                break
-                        else:
-                            raise Exception(f"未找到平台 {platform_name_new} 的ChromeDriver下载链接")
-                    else:
-                        raise Exception(f"未找到Chrome {major_version} 的ChromeDriver信息")
+        # Windows系统下直接使用指定版本的下载链接
+        if system == "windows":
+            # 直接使用与检测到的Chrome版本最接近的已知下载链接
+            # 对于Chrome 137版本，使用137.0.7151.119的下载链接
+            if major_version == 137:
+                download_url = f"https://storage.googleapis.com/chrome-for-testing-public/137.0.7151.119/{platform_name_new}/chromedriver-{platform_name_new}.zip"
+                driver_version = "137.0.7151.119"
+            # 对于其他版本，尝试构建可能的下载链接
+            elif major_version >= 115:
+                # 尝试使用固定的次版本号构建URL
+                possible_versions = [".0.7151.119", ".0.7258.2", ".0.7204.49", ".0.7103.113"]
+                for v_suffix in possible_versions:
+                    test_version = f"{major_version}{v_suffix}"
+                    test_url = f"https://storage.googleapis.com/chrome-for-testing-public/{test_version}/{platform_name_new}/chromedriver-{platform_name_new}.zip"
+                    try:
+                        response = requests.head(test_url, timeout=5)
+                        if response.status_code == 200:
+                            download_url = test_url
+                            driver_version = test_version
+                            break
+                    except:
+                        continue
                 else:
-                    raise Exception("无法获取Chrome for Testing API数据")
-            except Exception as e:
-                print(f"使用新API失败: {e}，尝试旧API...")
-                # 回退到旧API
+                    # 如果所有尝试都失败，回退到标准API查询
+                    print("尝试预设版本失败，回退到标准下载流程")
+                    return None
+            else:
+                # 对于较旧的Chrome版本，回退到旧API
                 url = f"https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{major_version}"
                 response = requests.get(url, timeout=10)
                 if response.status_code != 200:
@@ -162,14 +165,48 @@ def download_chromedriver():
                 driver_version = response.text.strip()
                 download_url = f"https://chromedriver.storage.googleapis.com/{driver_version}/chromedriver_{platform_name}.zip"
         else:
-            # 对于Chrome 114及以下版本，使用旧API
-            url = f"https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{major_version}"
-            response = requests.get(url, timeout=10)
-            if response.status_code != 200:
-                print("无法获取ChromeDriver版本信息")
-                return None
-            driver_version = response.text.strip()
-            download_url = f"https://chromedriver.storage.googleapis.com/{driver_version}/chromedriver_{platform_name}.zip"
+            # 对于非Windows平台，保持原有的API查询逻辑
+            # 对于Chrome 115+，使用新的Chrome for Testing API
+            if major_version >= 115:
+                api_url = f"https://googlechromelabs.github.io/chrome-for-testing/latest-patch-versions-per-milestone-with-downloads.json"
+                try:
+                    response = requests.get(api_url, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        milestone_data = data.get('milestones', {}).get(str(major_version))
+                        if milestone_data and 'downloads' in milestone_data:
+                            chromedriver_downloads = milestone_data['downloads'].get('chromedriver', [])
+                            # 查找匹配的平台
+                            for download in chromedriver_downloads:
+                                if download['platform'] == platform_name_new:
+                                    download_url = download['url']
+                                    driver_version = milestone_data['version']
+                                    break
+                            else:
+                                raise Exception(f"未找到平台 {platform_name_new} 的ChromeDriver下载链接")
+                        else:
+                            raise Exception(f"未找到Chrome {major_version} 的ChromeDriver信息")
+                    else:
+                        raise Exception("无法获取Chrome for Testing API数据")
+                except Exception as e:
+                    print(f"使用新API失败: {e}，尝试旧API...")
+                    # 回退到旧API
+                    url = f"https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{major_version}"
+                    response = requests.get(url, timeout=10)
+                    if response.status_code != 200:
+                        print("无法获取ChromeDriver版本信息")
+                        return None
+                    driver_version = response.text.strip()
+                    download_url = f"https://chromedriver.storage.googleapis.com/{driver_version}/chromedriver_{platform_name}.zip"
+            else:
+                # 对于Chrome 114及以下版本，使用旧API
+                url = f"https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{major_version}"
+                response = requests.get(url, timeout=10)
+                if response.status_code != 200:
+                    print("无法获取ChromeDriver版本信息")
+                    return None
+                driver_version = response.text.strip()
+                download_url = f"https://chromedriver.storage.googleapis.com/{driver_version}/chromedriver_{platform_name}.zip"
         
         # 创建下载目录
         download_dir = os.path.join(tempfile.gettempdir(), "chromedriver_download")

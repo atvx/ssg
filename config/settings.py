@@ -70,7 +70,8 @@ class Settings(BaseSettings):
     
     # 浏览器配置
     CHROME_USER_DATA_DIR: str = "chrome_user_data"
-    HEADLESS: bool = os.getenv("HEADLESS", "False").lower() == "true"
+    # 修改HEADLESS配置读取逻辑，正确处理False字符串
+    HEADLESS: bool = str(os.getenv("HEADLESS", "False")).lower() in ("true", "1", "yes", "y", "t")
 
 
 settings = Settings()
