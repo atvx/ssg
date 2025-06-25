@@ -7,8 +7,13 @@ from dotenv import load_dotenv
 # 确保能找到.env文件
 base_dir = Path(__file__).resolve().parent.parent
 env_path = base_dir / '.env'
-load_dotenv(dotenv_path=env_path)
 
+# 修改load_dotenv调用，设置override=True强制覆盖已存在的环境变量
+if env_path.exists():
+    load_dotenv(dotenv_path=str(env_path), verbose=True, override=True)
+    print(f"已加载环境变量文件: {env_path}")
+else:
+    print(f"警告: 环境变量文件不存在: {env_path}")
 
 def process_url(url):
     """处理URL字符串，移除可能的引号"""
@@ -70,11 +75,18 @@ class Settings(BaseSettings):
     
     # 浏览器配置
     CHROME_USER_DATA_DIR: str = "chrome_user_data"
-    # 修改HEADLESS配置读取逻辑，正确处理False字符串
+    # 修改HEADLESS配置读取逻辑，确保能正确读取环境变量
     HEADLESS: bool = str(os.getenv("HEADLESS", "False")).lower() in ("true", "1", "yes", "y", "t")
 
 
+# 打印环境变量值以进行调试
+headless_env = os.getenv("HEADLESS")
+# print(f"环境变量 HEADLESS={headless_env}")
+
 settings = Settings()
+
+# 打印最终HEADLESS设置值
+# print(f"最终HEADLESS设置: {settings.HEADLESS}")
 
 # 导出常用配置变量，以支持直接导入
 MEITUAN_CONFIG = settings.MEITUAN_CONFIG
