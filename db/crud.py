@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 import json
-from sqlalchemy import and_, or_, desc, select
+from sqlalchemy import and_, or_, desc, select, text
 from decimal import Decimal
 
 from . import models
@@ -807,46 +807,52 @@ def get_daily_sales_data(db: Session, query_date: str) -> List[Dict[str, Any]]:
         List[Dict]: 销售数据列表
     """
     try:
-        from datetime import datetime
-        from sqlalchemy import text
-        
-        # 获取年月信息
-        date_obj = datetime.strptime(query_date, '%Y-%m-%d')
-        current_year = date_obj.year
-        current_month = date_obj.month
-        
-        # 构建SQL查询 - 使用text()来执行原生SQL
+        # 构建SQL查询
         sql_query = text("""
-        SELECT 
-         c.id,
-         c.name,
-         c.status,
-         t.car_count,
-         ROUND(s.income_amt, 0) AS daily_revenue,
-         ROUND(s.avg_income_amt, 0) AS daily_avg_revenue_cart,
-         s.sales_cart_count AS daily_cart_count,
-         ROUND(t.target_income, 0) AS target_income,
-         ROUND(t.actual_income, 0) AS actual_income,
-         t.ach_rate,
-         ROUND(t.per_car_income, 0) AS per_car_income,
-         t.sold_car_count,
-         p.id AS parent_id,
-         p.name AS parent_name,
-         p.sort AS p_sort,
-         c.sort AS c_sort
+        SELECT
+            c.id,
+            c.name,
+            c.status,
+            t.car_count,
+            ROUND(d.income_amt, 0) AS daily_revenue,
+            ROUND(d.avg_income_amt, 0) AS daily_avg_revenue_cart,
+            d.sales_cart_count AS daily_cart_count,
+            ROUND(t.target_income, 0) AS target_income,
+            ROUND(mtd.total_income_amt, 0) AS actual_income,
+            ROUND(mtd.ach_rate, 1) AS ach_rate,
+            ROUND(mtd.per_car_income, 0) AS per_car_income,
+            mtd.total_sales_cart_count AS sold_car_count,
+            p.id AS parent_id,
+            p.name AS parent_name,
+            p.sort AS p_sort,
+            c.sort AS c_sort 
         FROM orgs AS c
         LEFT JOIN orgs AS p ON p.id = c.parent_id
-        LEFT JOIN sales_records s ON s.warehouse_name = c.name
-        LEFT JOIN sales_target t ON t.org_name = s.warehouse_name AND t.year = :current_year AND t.month = :current_month
-        WHERE c.org_type = 3 AND s.date = :query_date
-        ORDER BY p.sort ASC, c.sort ASC
+        LEFT JOIN sales_records AS d ON d.warehouse_name = c.name AND d.DATE = :query_date
+        LEFT JOIN sales_target AS t ON t.org_name = c.name AND t.year = YEAR (:query_date) AND t.month = MONTH (:query_date)
+        LEFT JOIN (
+            SELECT
+                sr.warehouse_name,
+                SUM(sr.income_amt) AS total_income_amt,
+                SUM(sr.sales_cart_count) AS total_sales_cart_count,
+                ROUND(SUM(sr.income_amt) / NULLIF(SUM(sr.sales_cart_count), 0), 2) AS per_car_income,
+                ROUND(SUM(sr.income_amt) / NULLIF(MAX(st.target_income), 0) * 100, 1) AS ach_rate 
+            FROM
+                sales_records sr
+                LEFT JOIN sales_target st ON st.org_name = sr.warehouse_name 
+                AND st.year = YEAR (:query_date) 
+                AND st.month = MONTH (:query_date) 
+            WHERE
+                sr.date BETWEEN DATE_FORMAT(:query_date, '%Y-%m-01') 
+                AND :query_date 
+            GROUP BY sr.warehouse_name 
+        ) AS mtd ON mtd.warehouse_name = c.name 
+        WHERE c.org_type = 3
+        ORDER BY p.sort, c.sort;
         """)
         
-        result = db.execute(sql_query, {
-            'current_year': current_year,
-            'current_month': current_month,
-            'query_date': query_date
-        })
+        # 执行查询
+        result = db.execute(sql_query, {'query_date': query_date})
         
         # 将结果转换为字典列表
         columns = result.keys()
