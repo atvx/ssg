@@ -12,13 +12,13 @@ services:
       - SYS_ADMIN
       - SYS_TIME
     # 调整共享内存大小
-    shm_size: 4gb
+    shm_size: 8gb
     # 优化资源限制
     deploy:
       resources:
         limits:
-          memory: 4G
-          cpus: '1.5'
+          memory: 6G
+          cpus: '2.0'
     security_opt:
       - seccomp=unconfined
     ports:
@@ -60,6 +60,8 @@ services:
       - SE_OPTS=--disable-dev-shm-usage
       - WDM_LOG_LEVEL=0
       - WDM_SSL_VERIFY=0
+      # JavaScript内存限制
+      - NODE_OPTIONS=--max_old_space_size=2048
       # 添加Redis连接参数
       - REDIS_SOCKET_TIMEOUT=60
       - REDIS_SOCKET_CONNECT_TIMEOUT=30
@@ -80,11 +82,14 @@ services:
       # 新增：日报导出相关环境变量
       - LIBREOFFICE_PATH=/usr/bin/libreoffice
       - POPPLER_PATH=/usr/bin
+      # Chrome配置
+      - CHROME_HEADLESS=true
+      - SELENIUM_HEADLESS=true
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
-    command: bash -c "pip install backoff==2.2.1 --root-user-action=ignore && uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120"
+    command: bash -c "cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py && python /tmp/selenium_setup_tmp.py && rm -f /tmp/selenium_setup_tmp.py && pip install backoff==2.2.1 urllib3==2.0.7 --root-user-action=ignore && uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120"
     networks:
       - ssg-network
     # 添加健康检查
@@ -108,13 +113,13 @@ services:
       - SYS_ADMIN
       - SYS_TIME
     # 调整共享内存大小
-    shm_size: 4gb
+    shm_size: 8gb
     # 优化资源限制
     deploy:
       resources:
         limits:
-          memory: 4G
-          cpus: '1.5'
+          memory: 6G
+          cpus: '2.0'
     security_opt:
       - seccomp=unconfined
     volumes:
@@ -153,6 +158,8 @@ services:
       - SE_OPTS=--disable-dev-shm-usage
       - WDM_LOG_LEVEL=0
       - WDM_SSL_VERIFY=0
+      # JavaScript内存限制
+      - NODE_OPTIONS=--max_old_space_size=2048
       # 添加Redis连接参数
       - REDIS_SOCKET_TIMEOUT=60
       - REDIS_SOCKET_CONNECT_TIMEOUT=30
@@ -175,12 +182,15 @@ services:
       # 新增：日报导出相关环境变量
       - LIBREOFFICE_PATH=/usr/bin/libreoffice
       - POPPLER_PATH=/usr/bin
+      # Chrome配置
+      - CHROME_HEADLESS=true
+      - SELENIUM_HEADLESS=true
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
     # 优化Celery命令，添加backoff库安装
-    command: bash -c "pip install backoff==2.2.1 --root-user-action=ignore && celery -A celery_app worker --loglevel=info --concurrency=2 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --heartbeat-interval=60 --without-gossip"
+    command: bash -c "cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py && python /tmp/selenium_setup_tmp.py && rm -f /tmp/selenium_setup_tmp.py && pip install backoff==2.2.1 urllib3==2.0.7 --root-user-action=ignore && celery -A celery_app worker --loglevel=info --concurrency=1 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --heartbeat-interval=60 --without-gossip"
     depends_on:
       api:
         condition: service_healthy
