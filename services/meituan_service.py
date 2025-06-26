@@ -250,14 +250,23 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
                     date_obj = datetime.strptime(query_date, "%Y-%m-%d")
                     formatted_date = date_obj.strftime("%Y-%m-%d")  # 标准化日期格式
                     logger.info(f"格式化后的日期: {formatted_date}")
+                    
+                    # 获取当前系统日期
+                    today_date = datetime.now().strftime("%Y-%m-%d")
+                    
+                    # 检查查询日期是否与系统当前日期一致
+                    if formatted_date == today_date:
+                        logger.info(f"查询日期 {formatted_date} 与系统当前日期一致，无需选择日期")
+                    else:
+                        # 日期不同，需要选择日期
+                        logger.info(f"查询日期 {formatted_date} 与系统当前日期 {today_date} 不同，调用select_date设置日期")
+                        select_date(driver, formatted_date)
+                        time.sleep(2)
                 except ValueError:
                     logger.error(f"日期格式错误: {query_date}，应为YYYY-MM-DD格式")
                     task_result["message"] = "日期格式错误，应为YYYY-MM-DD格式"
                     return task_result
                 
-                logger.info(f"调用select_date设置日期: {formatted_date}")
-                select_date(driver, formatted_date)
-                time.sleep(2)
             except Exception as e:
                 logger.error(f"设置日期时出错: {e}")
                 logger.error(traceback.format_exc())
