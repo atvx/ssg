@@ -7,6 +7,8 @@ import pickle
 import requests
 from typing import Dict, Any, Optional, Union
 import mimetypes
+import uuid
+from datetime import datetime
 
 
 def kill_chrome_processes():
@@ -261,30 +263,50 @@ class FileUtils:
             FileNotFoundError: 如果文件不存在
             Exception: 上传过程中的其他错误
         """
+        # 导入配置
+        from config.settings import settings
+        
         # 检查文件是否存在
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"文件不存在: {file_path}")
         
+        # 根据UPLOAD_DRIVER配置选择处理方式
+        if settings.UPLOAD_DRIVER == "local":
+            # 本地模式：直接拼接完整URL
+            filename = os.path.basename(file_path)
+            
+            # 构建本地文件URL
+            # 移除APP_DOMAIN末尾的斜杠（如果有）
+            domain = settings.APP_DOMAIN.rstrip('/')
+            # 确保MEDIA_PREFIX以斜杠开头（如果没有）
+            media_prefix = settings.MEDIA_PREFIX if settings.MEDIA_PREFIX.startswith('/') else f"/{settings.MEDIA_PREFIX}"
+            # 移除MEDIA_PREFIX末尾的斜杠（如果有）
+            media_prefix = media_prefix.rstrip('/')
+            
+            file_url = f"{domain}{media_prefix}/{filename}"
+            
+            # 返回本地模式的响应格式
+            return {
+                "success": True,
+                "filename": filename,
+                "url": file_url,
+                "contentType": cls._get_content_type(file_path),
+                "fileSize": os.path.getsize(file_path)
+            }
+        else:
+            # r2模式：使用原有的上传逻辑
+            return cls._upload_to_r2(file_path)
+    
+    @classmethod
+    def _upload_to_r2(cls, file_path: str) -> Dict[str, Any]:
+        """上传文件到R2存储"""
         # 准备请求头
         headers = {
             "Authorization": f"Bearer {cls.TOKEN}"
         }
         
         # 获取文件MIME类型
-        mime_type, _ = mimetypes.guess_type(file_path)
-        if not mime_type:
-            # 如果无法确定MIME类型，根据扩展名设置默认值
-            ext = os.path.splitext(file_path)[1].lower()
-            if ext == '.xlsx':
-                mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            elif ext == '.pdf':
-                mime_type = 'application/pdf'
-            elif ext == '.png':
-                mime_type = 'image/png'
-            elif ext == '.jpg' or ext == '.jpeg':
-                mime_type = 'image/jpeg'
-            else:
-                mime_type = 'application/octet-stream'
+        mime_type = cls._get_content_type(file_path)
         
         # 准备文件表单数据
         filename = os.path.basename(file_path)
@@ -312,6 +334,25 @@ class FileUtils:
         except requests.RequestException as e:
             raise Exception(f"上传文件失败: {str(e)}")
     
+    @classmethod
+    def _get_content_type(cls, file_path: str) -> str:
+        """获取文件的MIME类型"""
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if not mime_type:
+            # 如果无法确定MIME类型，根据扩展名设置默认值
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == '.xlsx':
+                mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            elif ext == '.pdf':
+                mime_type = 'application/pdf'
+            elif ext == '.png':
+                mime_type = 'image/png'
+            elif ext == '.jpg' or ext == '.jpeg':
+                mime_type = 'image/jpeg'
+            else:
+                mime_type = 'application/octet-stream'
+        return mime_type
+
     @classmethod
     def get_file_url(cls, file_path: str) -> Optional[str]:
         """

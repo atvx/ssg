@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     
+    # 文件上传配置
+    UPLOAD_DRIVER: str = os.getenv("UPLOAD_DRIVER", "r2")
+    APP_DOMAIN: str = os.getenv("APP_DOMAIN", "https://example.com")
+    MEDIA_PREFIX: str = os.getenv("MEDIA_PREFIX", "/media")
+    
     # 数据库配置
     DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://qian:qian163@124.221.92.150:3306/ssgmlj?connect_timeout=10")
     
@@ -99,3 +104,6 @@ REDIS_URL = settings.REDIS_URL
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+UPLOAD_DRIVER = settings.UPLOAD_DRIVER
+APP_DOMAIN = settings.APP_DOMAIN
+MEDIA_PREFIX = settings.MEDIA_PREFIX
