@@ -7,8 +7,76 @@ from pdf2image import convert_from_path
 from openpyxl import load_workbook
 from openpyxl.styles import Side, Border
 import logging
+import urllib.parse
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_utf8_encoding():
+    """确保系统环境使用UTF-8编码"""
+    import locale
+    try:
+        # 设置环境变量强制使用UTF-8
+        os.environ['LC_ALL'] = 'C.UTF-8'
+        os.environ['LANG'] = 'C.UTF-8'
+        os.environ['LC_CTYPE'] = 'C.UTF-8'
+        
+        # 设置Python的默认编码
+        locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+        logger.info("已设置UTF-8编码环境")
+    except Exception as e:
+        logger.warning(f"设置UTF-8编码环境失败: {e}")
+
+
+def normalize_filename(filename: str) -> str:
+    """
+    标准化文件名，确保中文字符正确编码
+    
+    Args:
+        filename: 原始文件名
+        
+    Returns:
+        str: 标准化后的文件名
+    """
+    try:
+        # 确保文件名是正确的UTF-8编码
+        if isinstance(filename, bytes):
+            filename = filename.decode('utf-8')
+        
+        # 处理URL编码的中文字符
+        if '%' in filename or '<' in filename:
+            try:
+                # 尝试URL解码
+                filename = urllib.parse.unquote(filename, encoding='utf-8')
+            except:
+                pass
+        
+        # 处理十六进制编码的中文字符（如<e5><b8><82>）
+        if '<' in filename and '>' in filename:
+            import re
+            # 查找所有<xx>格式的编码
+            hex_pattern = r'<([a-fA-F0-9]{2})>'
+            matches = re.findall(hex_pattern, filename)
+            if matches:
+                try:
+                    # 将十六进制转换为字节，然后解码为UTF-8
+                    byte_data = bytes([int(hex_code, 16) for hex_code in matches])
+                    decoded_text = byte_data.decode('utf-8')
+                    # 替换编码部分
+                    filename = re.sub(r'<[a-fA-F0-9]{2}>', '', filename)
+                    # 找到第一个编码的位置，插入解码后的文本
+                    if '_' in filename:
+                        parts = filename.split('_')
+                        filename = f"{decoded_text}_{parts[-1]}"
+                    else:
+                        filename = decoded_text
+                except Exception as e:
+                    logger.warning(f"解码十六进制文件名失败: {e}")
+        
+        return filename.strip()
+    except Exception as e:
+        logger.error(f"标准化文件名失败: {e}")
+        return filename
 
 
 def set_excel_landscape_format(xlsx_path: str, sheetname: str = None):
@@ -117,21 +185,59 @@ def convert_xlsx_to_pdf(xlsx_path: Path, output_dir: Path = None) -> Path:
         Path: 生成的PDF文件路径
     """
     try:
+        # 确保UTF-8编码环境
+        ensure_utf8_encoding()
+        
         if output_dir is None:
             output_dir = xlsx_path.parent
         
         soffice_path = find_soffice_executable()
         
-        # 增强转换参数
-        subprocess.run([
-            soffice_path, "--headless",
+        # 标准化输入文件路径
+        xlsx_path_str = str(xlsx_path)
+        output_dir_str = str(output_dir)
+        
+        # 增强转换参数，添加编码相关参数
+        cmd = [
+            soffice_path, 
+            "--headless",
             "--infilter=Calc8",
             "--convert-to", "pdf:calc_pdf_Export:{'EmbedComplexScriptFonts':true,'EmbedFonts':true,'ExportNotes':false,'ScaleToPages':1,'SinglePageSheets':true}",
-            "--outdir", str(output_dir),
-            str(xlsx_path)
-        ], check=True)
+            "--outdir", output_dir_str,
+            xlsx_path_str
+        ]
         
+        # 设置环境变量确保UTF-8编码
+        env = os.environ.copy()
+        env.update({
+            'LC_ALL': 'C.UTF-8',
+            'LANG': 'C.UTF-8',
+            'LC_CTYPE': 'C.UTF-8'
+        })
+        
+        result = subprocess.run(cmd, check=True, env=env, 
+                               capture_output=True, text=True, encoding='utf-8')
+        
+        # 生成PDF文件路径
         pdf_path = output_dir / xlsx_path.with_suffix('.pdf').name
+        
+        # 检查生成的文件是否存在，如果不存在尝试查找可能的编码问题
+        if not pdf_path.exists():
+            # 列出输出目录中的所有PDF文件
+            pdf_files = list(output_dir.glob("*.pdf"))
+            if pdf_files:
+                # 找到最新的PDF文件
+                latest_pdf = max(pdf_files, key=lambda p: p.stat().st_mtime)
+                # 如果文件名有编码问题，重命名为正确的文件名
+                expected_name = xlsx_path.stem + '.pdf'
+                if latest_pdf.name != expected_name:
+                    correct_pdf_path = output_dir / expected_name
+                    latest_pdf.rename(correct_pdf_path)
+                    pdf_path = correct_pdf_path
+                    logger.info(f"已重命名PDF文件: {latest_pdf} -> {pdf_path}")
+                else:
+                    pdf_path = latest_pdf
+        
         logger.info(f"PDF文件生成完成: {pdf_path}")
         return pdf_path
         
@@ -166,24 +272,66 @@ def convert_pdf_to_png(pdf_path: Path, output_path: Path = None, dpi: int = 200)
         Path: 生成的PNG图片路径
     """
     try:
+        # 确保UTF-8编码环境
+        ensure_utf8_encoding()
+        
+        # 标准化PDF文件路径
+        pdf_path_normalized = Path(normalize_filename(str(pdf_path)))
+        if not pdf_path_normalized.exists() and pdf_path.exists():
+            pdf_path_normalized = pdf_path
+        
         if output_path is None:
-            output_path = pdf_path.with_suffix('.png')
+            output_path = pdf_path_normalized.with_suffix('.png')
         
         poppler_path = get_poppler_path()
         
-        pages = convert_from_path(
-            str(pdf_path), 
-            dpi=dpi,
-            poppler_path=poppler_path
-        )
+        # 设置环境变量确保UTF-8编码
+        original_env = os.environ.copy()
+        os.environ.update({
+            'LC_ALL': 'C.UTF-8',
+            'LANG': 'C.UTF-8',
+            'LC_CTYPE': 'C.UTF-8'
+        })
         
-        # 只保存第一页
-        pages[0].save(str(output_path), "PNG")
-        logger.info(f"PNG图片生成完成: {output_path}")
-        return output_path
+        try:
+            pages = convert_from_path(
+                str(pdf_path_normalized), 
+                dpi=dpi,
+                poppler_path=poppler_path
+            )
+            
+            # 只保存第一页
+            pages[0].save(str(output_path), "PNG")
+            logger.info(f"PNG图片生成完成: {output_path}")
+            return output_path
+        finally:
+            # 恢复原环境变量
+            os.environ.clear()
+            os.environ.update(original_env)
         
     except Exception as e:
         logger.error(f"PDF转PNG时出错: {str(e)}")
+        # 如果PDF文件路径有编码问题，尝试查找并使用正确的文件
+        try:
+            pdf_dir = pdf_path.parent
+            pdf_files = list(pdf_dir.glob("*.pdf"))
+            if pdf_files:
+                # 查找匹配的PDF文件（基于文件大小和修改时间）
+                target_pdf = None
+                for pdf_file in pdf_files:
+                    if pdf_file.stat().st_size > 0:  # 确保文件不为空
+                        target_pdf = pdf_file
+                        break
+                
+                if target_pdf:
+                    logger.info(f"尝试使用找到的PDF文件: {target_pdf}")
+                    pages = convert_from_path(str(target_pdf), dpi=dpi, poppler_path=get_poppler_path())
+                    pages[0].save(str(output_path), "PNG")
+                    logger.info(f"PNG图片生成完成: {output_path}")
+                    return output_path
+        except Exception as fallback_error:
+            logger.error(f"备用转换方案也失败: {fallback_error}")
+        
         raise
 
 

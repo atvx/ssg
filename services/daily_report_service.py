@@ -12,7 +12,9 @@ from utils.file_format_utils import (
     set_excel_landscape_format, 
     convert_xlsx_to_pdf, 
     convert_pdf_to_png, 
-    ensure_directory_exists
+    ensure_directory_exists,
+    ensure_utf8_encoding,
+    normalize_filename
 )
 from utils.excel import export_json_to_excel
 
@@ -249,6 +251,9 @@ class DailyReportService:
             Dict: 导出结果，包含成功状态、消息、数据和文件路径
         """
         try:
+            # 确保UTF-8编码环境
+            ensure_utf8_encoding()
+            
             # 处理默认参数
             if query_date is None:
                 query_date = datetime.now().strftime('%Y-%m-%d')

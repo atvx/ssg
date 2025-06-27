@@ -1,8 +1,47 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import os
+import locale
+import sys
+
+# 设置UTF-8编码环境，解决中文文件名编码问题
+def init_utf8_environment():
+    """初始化UTF-8编码环境"""
+    try:
+        # 设置环境变量
+        os.environ['PYTHONIOENCODING'] = 'utf-8'
+        os.environ['LC_ALL'] = 'C.UTF-8'
+        os.environ['LANG'] = 'C.UTF-8'
+        os.environ['LC_CTYPE'] = 'C.UTF-8'
+        
+        # 设置Python的默认编码
+        if hasattr(sys, 'setdefaultencoding'):
+            sys.setdefaultencoding('utf-8')
+        
+        # 设置locale
+        try:
+            locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+        except locale.Error:
+            try:
+                locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+            except locale.Error:
+                pass  # 如果都设置失败，继续执行
+        
+        print("UTF-8编码环境初始化完成")
+    except Exception as e:
+        print(f"UTF-8编码环境初始化失败: {e}")
+
+# 在导入其他模块之前初始化编码环境
+init_utf8_environment()
+
+import uvicorn
+import sys
+from pathlib import Path
 from fastapi import FastAPI, Depends, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-import uvicorn
 import logging
 import warnings
 

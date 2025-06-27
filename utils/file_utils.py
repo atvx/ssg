@@ -9,7 +9,9 @@ from typing import Dict, Any, Optional, Union
 import mimetypes
 import uuid
 from datetime import datetime
+import logging
 
+logger = logging.getLogger(__name__)
 
 def kill_chrome_processes():
     """根据操作系统类型终止Chrome进程"""
@@ -266,14 +268,40 @@ class FileUtils:
         # 导入配置
         from config.settings import settings
         
+        # 标准化文件路径，处理可能的编码问题
+        from utils.file_format_utils import normalize_filename
+        file_path = normalize_filename(file_path)
+        
         # 检查文件是否存在
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"文件不存在: {file_path}")
+            # 如果标准化后的路径不存在，尝试在同目录查找匹配的文件
+            file_dir = os.path.dirname(file_path)
+            file_name = os.path.basename(file_path)
+            if os.path.exists(file_dir):
+                import glob
+                # 尝试查找匹配的文件
+                pattern = os.path.join(file_dir, "*" + os.path.splitext(file_name)[1])
+                matching_files = glob.glob(pattern)
+                if matching_files:
+                    # 使用第一个匹配的文件
+                    file_path = matching_files[0]
+                    logger.info(f"使用找到的匹配文件: {file_path}")
+                else:
+                    raise FileNotFoundError(f"文件不存在: {file_path}")
+            else:
+                raise FileNotFoundError(f"文件不存在: {file_path}")
         
         # 根据UPLOAD_DRIVER配置选择处理方式
         if settings.UPLOAD_DRIVER == "local":
             # 本地模式：直接拼接完整URL
             filename = os.path.basename(file_path)
+            
+            # 确保文件名是UTF-8编码的
+            try:
+                filename = filename.encode('utf-8').decode('utf-8')
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                # 如果编码出错，使用原文件名
+                pass
             
             # 构建本地文件URL
             # 移除APP_DOMAIN末尾的斜杠（如果有）
