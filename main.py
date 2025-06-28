@@ -40,17 +40,27 @@ import sys
 from pathlib import Path
 from fastapi import FastAPI, Depends, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import logging
 import warnings
+from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 
-# 配置日志和警告
-logging.basicConfig(level=logging.ERROR)
+# 配置日志
+logging.basicConfig(level=logging.INFO)
 logging.getLogger("uvicorn.access").setLevel(logging.ERROR)
 logging.getLogger("uvicorn.error").setLevel(logging.ERROR)
 logging.getLogger("fastapi").setLevel(logging.ERROR)
 logging.getLogger("sqlalchemy").setLevel(logging.ERROR)
+
+# 屏蔽selenium-wire的详细日志
+logging.getLogger("seleniumwire.handler").setLevel(logging.ERROR)
+logging.getLogger("seleniumwire.storage").setLevel(logging.ERROR)
+logging.getLogger("seleniumwire.server").setLevel(logging.WARNING)
+logging.getLogger("seleniumwire.backend").setLevel(logging.WARNING)
+logging.getLogger("seleniumwire.proxy").setLevel(logging.WARNING)
 
 # 忽略所有警告
 warnings.filterwarnings("ignore")
@@ -60,6 +70,7 @@ from config.settings import settings
 from db.database import engine, Base
 from schemas.response import APIResponse, ErrorType, StatusCode, ErrorInfo, ErrorDetail
 from utils.response_utils import create_success_response, create_error_response, create_validation_error, create_server_error
+from utils.logger import setup_logging_filters
 
 # WebSocket模块
 from ws import router as websocket_router
@@ -92,6 +103,10 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 # 注册WebSocket路由
 app.include_router(websocket_router)
 
+# 设置日志过滤器
+setup_logging_filters()
+
+# 配置日志
 logger = logging.getLogger(__name__)
 
 # 添加全局异常处理器

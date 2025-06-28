@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # 修改HEADLESS配置读取逻辑，确保能正确读取环境变量
     HEADLESS: bool = str(os.getenv("HEADLESS", "False")).lower() in ("true", "1", "yes", "y", "t")
 
+    # 网络超时配置
+    NETWORK_TIMEOUT: int = int(os.getenv("NETWORK_TIMEOUT", "60"))  # 默认60秒
+    API_MONITOR_TIMEOUT: int = int(os.getenv("API_MONITOR_TIMEOUT", "90"))  # 默认90秒
+    API_RETRY_TIMEOUT: int = int(os.getenv("API_RETRY_TIMEOUT", "30"))  # 重试时的超时时间，默认30秒
+    MAX_API_RETRIES: int = int(os.getenv("MAX_API_RETRIES", "2"))  # 最大重试次数，默认2次
+
 
 # 打印环境变量值以进行调试
 headless_env = os.getenv("HEADLESS")

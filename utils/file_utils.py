@@ -10,155 +10,124 @@ import mimetypes
 import uuid
 from datetime import datetime
 import logging
+import glob
+import shutil
+import stat
 
 logger = logging.getLogger(__name__)
 
+def safe_remove_file(file_path):
+    """安全删除文件，包含重试和权限处理"""
+    if not os.path.exists(file_path):
+        return True
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            # 尝试修改权限后删除
+            if os.path.isfile(file_path):
+                # 修改文件权限
+                try:
+                    os.chmod(file_path, stat.S_IWRITE | stat.S_IREAD)
+                except:
+                    pass
+                os.remove(file_path)
+            elif os.path.isdir(file_path):
+                # 如果是目录，使用shutil.rmtree
+                shutil.rmtree(file_path, ignore_errors=True)
+            return True
+        except PermissionError:
+            # 权限错误，等待后重试
+            time.sleep(0.5)
+            continue
+        except FileNotFoundError:
+            # 文件已不存在
+            return True
+        except Exception as e:
+            logger.debug(f"删除文件 {file_path} 时出错 (尝试 {attempt + 1}/{max_retries}): {e}")
+            if attempt == max_retries - 1:
+                return False
+            time.sleep(0.5)
+    return False
+
+def force_kill_processes(process_names):
+    """强制终止指定名称的进程
+    
+    Args:
+        process_names: 进程名称列表
+    """
+    try:
+        system = platform.system()
+        
+        for process_name in process_names:
+            if system == "Windows":
+                # Windows使用taskkill强制终止
+                subprocess.run(f"taskkill /f /im {process_name}.exe", shell=True, 
+                             capture_output=True, text=True)
+            else:
+                # Unix系统使用pkill强制终止
+                subprocess.run(f"pkill -9 -f '{process_name}'", shell=True, 
+                             capture_output=True, text=True)
+        
+        time.sleep(1)  # 等待进程完全终止
+        logger.debug(f"已强制终止进程: {process_names}")
+        
+    except Exception as e:
+        logger.debug(f"强制终止进程时出错: {e}")
+
 def kill_chrome_processes():
     """根据操作系统类型终止Chrome进程"""
-    system = platform.system()
-    
     try:
+        logger.info("开始清理Chrome进程...")
+        
+        # 使用新的Chrome清理工具，但只清理进程，不清理用户数据
+        from utils.chrome_cleanup import ChromeCleanup
+        cleaner = ChromeCleanup()
+        
+        # 第一阶段：温和的进程终止
+        system = platform.system()
         if system == "Windows":
-            # Windows系统
-            os.system("taskkill /f /im chrome.exe >nul 2>&1")
-            os.system("taskkill /f /im chromedriver.exe >nul 2>&1")
+            subprocess.run("taskkill /im chrome.exe /t", shell=True, 
+                         capture_output=True, text=True)
+            subprocess.run("taskkill /im chromedriver.exe /t", shell=True, 
+                         capture_output=True, text=True)
         elif system == "Darwin":
-            # macOS系统
-            subprocess.run("pkill -f 'Google Chrome'", shell=True)
-            subprocess.run("pkill -f 'chromedriver'", shell=True)
+            subprocess.run("pkill -f 'Google Chrome'", shell=True, 
+                         capture_output=True, text=True)
+            subprocess.run("pkill -f 'chromedriver'", shell=True, 
+                         capture_output=True, text=True)
         else:
-            # Linux及其他系统 - 使用更全面的方法
-            print("在Linux环境中清理Chrome进程...")
-            
-            # 使用多种方法检测和清理Chrome相关进程
-            try:
-                # 使用ps命令查找Chrome相关进程
-                try:
-                    ps_cmd = "ps -ef | grep -i 'chrom' | grep -v grep"
-                    print(f"执行命令: {ps_cmd}")
-                    ps_output = subprocess.check_output(ps_cmd, shell=True, text=True)
-                    print(f"找到以下Chrome相关进程:\n{ps_output}")
-                except subprocess.CalledProcessError:
-                    print("未找到Chrome相关进程")
-                
-                # 1. 先使用pkill尝试正常终止进程
-                print("使用pkill终止进程...")
-                subprocess.run("pkill -f chrome", shell=True)
-                subprocess.run("pkill -f chromedriver", shell=True)
-                
-                # 2. 等待短暂时间
-                time.sleep(1)
-                
-                # 3. 强制终止顽固进程
-                print("强制终止顽固进程...")
-                subprocess.run("pkill -9 -f chrome", shell=True)
-                subprocess.run("pkill -9 -f chromedriver", shell=True)
-                
-                # 4. 使用killall命令作为备选方案
-                print("使用killall命令...")
-                # 不使用capture_output，改为重定向stderr
-                subprocess.run("killall -9 chrome 2>/dev/null || true", shell=True)
-                subprocess.run("killall -9 chromedriver 2>/dev/null || true", shell=True)
-                
-                # 5. 清理进程组
-                print("清理进程组...")
-                subprocess.run("pkill -9 -g chrome 2>/dev/null || true", shell=True)
-                
-                # 6. 逐个处理进程 - 获取所有PID并直接杀死
-                try:
-                    # 直接获取PID列表
-                    pid_cmd = "ps -eo pid,comm | grep -i chrom | grep -v grep | awk '{print $1}'"
-                    pid_list = subprocess.check_output(pid_cmd, shell=True, text=True).strip().split('\n')
-                    
-                    for pid in pid_list:
-                        if pid.strip():
-                            try:
-                                # 直接使用kill -9 杀死进程
-                                subprocess.run(f"kill -9 {pid}", shell=True)
-                            except:
-                                pass
-                except:
-                    pass
-                
-                # 7. 清理僵尸进程的父进程
-                try:
-                    ppid_cmd = "ps -eo ppid,stat | grep -i Z | grep -v grep | awk '{print $1}' | sort | uniq"
-                    ppid_list = subprocess.check_output(ppid_cmd, shell=True, text=True).strip().split('\n')
-                    
-                    for ppid in ppid_list:
-                        if ppid.strip() and ppid.strip() != "1":  # 不杀PID为1的进程
-                            try:
-                                subprocess.run(f"kill -9 {ppid}", shell=True)
-                            except:
-                                pass
-                except:
-                    pass
-                    
-            except Exception as e:
-                print(f"Chrome进程清理过程中出错: {e}")
-            
-        # 等待进程终止
+            # Linux系统
+            subprocess.run("pkill -f chrome", shell=True, 
+                         capture_output=True, text=True)
+            subprocess.run("pkill -f chromedriver", shell=True, 
+                         capture_output=True, text=True)
+        
+        # 等待进程自然终止
         time.sleep(2)
         
-        # 清理用户数据目录中的锁文件
+        # 第二阶段：强制终止仍在运行的进程
+        force_kill_processes(['chrome', 'chromedriver', 'Google Chrome'])
+        
+        # 等待Chrome完全退出
+        cleaner.wait_for_chrome_exit(timeout=5)
+        
+        # 第三阶段：只清理锁文件，保留登录状态
         try:
-            print("清理Chrome用户数据目录锁文件...")
-            
-            # 根据不同操作系统使用不同的清理方法
-            if system == "Windows":
-                # Windows系统使用通配符删除
-                lock_patterns = [
-                    r".\chrome_user_data\Default\*lock*",
-                    r".\chrome_user_data\*SingletonLock*",
-                    r".\chrome_user_data\*SingletonCookie*",
-                    r".\chrome_user_data\*SingletonSocket*",
-                    r".\chrome_user_data\Default\Cache\Cache_Data\index*",
-                    r".\chrome_user_data\Default\Cache\Cache_Data\data*",
-                    r".\tmp\chrome_tmp\*lock*",
-                    r".\tmp\chrome_tmp\*Singleton*"
-                ]
-                
-                for pattern in lock_patterns:
-                    try:
-                        os.system(f"del /F /Q {pattern} 2>nul")
-                    except:
-                        pass
-                        
-            else:
-                # Linux/Mac系统
-                lock_files = [
-                    "./chrome_user_data/SingletonLock",
-                    "./chrome_user_data/SingletonCookie",
-                    "./chrome_user_data/SingletonSocket",
-                    "./chrome_user_data/.org.chromium.Chromium.*/SingletonLock",
-                    "./chrome_user_data/Default/Cache/Cache_Data/index*",
-                    "./chrome_user_data/Default/Cache/Cache_Data/data*",
-                    "/tmp/chrome_tmp/SingletonLock",
-                    "/tmp/chrome_tmp/SingletonCookie",
-                    "/tmp/chrome_tmp/SingletonSocket",
-                    "/tmp/chrome_tmp/.org.chromium.Chromium.*/SingletonLock",
-                    "/tmp/chrome_tmp/Default/Cache/Cache_Data/index*",
-                    "/tmp/chrome_tmp/Default/Cache/Cache_Data/data*"
-                ]
-                
-                for pattern in lock_files:
-                    # 使用Python内置方法而不是shell命令
-                    try:
-                        import glob
-                        for file_path in glob.glob(pattern):
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-                                print(f"已删除: {file_path}")
-                    except Exception as e:
-                        print(f"删除文件 {pattern} 时出错: {e}")
-                
+            # 只清理用户数据目录的锁文件，不删除登录状态
+            cleaner.cleanup_user_data_directories()
+            # 完全清理临时目录
+            cleaner.cleanup_temp_files()
         except Exception as e:
-            print(f"清理锁文件时出错: {e}")
-            
+            logger.debug(f"Chrome文件清理时出现非关键错误: {e}")
+        
+        logger.info("Chrome进程清理完成，已保留登录状态")
         return True
+        
     except Exception as e:
-        print(f"终止Chrome进程失败: {e}")
+        logger.error(f"Chrome进程清理失败: {e}")
         return False
+
 
 
 def save_cookies(driver, filename):
@@ -186,12 +155,11 @@ def save_cookies(driver, filename):
             with open(filename, 'wb') as f:
                 pickle.dump(cookies, f)
                 
-        print(f"Cookies已保存到: {filename}")
+        logger.info(f"Cookies已保存到: {filename}")
         return True
     except Exception as e:
-        print(f"保存cookies时出错: {e}")
+        logger.error(f"保存cookies时出错: {e}")
         return False
-
 
 def load_cookies(driver, filename):
     """从文件加载cookies到浏览器
@@ -204,7 +172,7 @@ def load_cookies(driver, filename):
         bool: 加载成功返回True，否则返回False
     """
     if not os.path.exists(filename):
-        print(f"Cookies文件不存在: {filename}")
+        logger.warning(f"Cookies文件不存在: {filename}")
         return False
         
     try:
@@ -230,9 +198,8 @@ def load_cookies(driver, filename):
                 
         return True
     except Exception as e:
-        print(f"加载cookies时出错: {e}")
+        logger.error(f"加载cookies时出错: {e}")
         return False
-
 
 class FileUtils:
     """文件工具类，提供文件上传等功能"""
@@ -278,7 +245,6 @@ class FileUtils:
             file_dir = os.path.dirname(file_path)
             file_name = os.path.basename(file_path)
             if os.path.exists(file_dir):
-                import glob
                 # 尝试查找匹配的文件
                 pattern = os.path.join(file_dir, "*" + os.path.splitext(file_name)[1])
                 matching_files = glob.glob(pattern)

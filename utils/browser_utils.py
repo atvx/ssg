@@ -61,121 +61,138 @@ def monitor_api_response(driver, url_pattern, timeout=30, callback=None, methods
         if start_time is None:
             start_time = time.time()
             
-        logger.info(f"开始监控API响应，URL模式: {url_pattern}, 开始时间: {start_time}")
+        logger.info(f"开始监控API响应，URL模式: {url_pattern}, 超时时间: {timeout}秒")
         
         # 清除之前的请求记录
-        driver.requests.clear()
+        try:
+            driver.requests.clear()
+        except Exception as e:
+            logger.warning(f"清理请求记录时出错: {e}")
         
         monitor_start_time = time.time()
+        check_interval = 0.5  # 检查间隔
+        last_request_count = 0
+        no_new_requests_count = 0
+        max_no_new_requests = 10  # 如果连续10次检查都没有新请求，缩短超时
+        
         while time.time() - monitor_start_time < timeout:
-            # 获取所有请求
-            for request in driver.requests:
-                if not request.response:
-                    continue  # 跳过未完成的请求
+            try:
+                # 获取所有请求
+                current_requests = list(driver.requests)
+                current_request_count = len(current_requests)
                 
-                # 检查请求时间（如果可用）
-                if hasattr(request, 'date') and request.date:
-                    req_timestamp = request.date.timestamp()
-                    if req_timestamp < start_time:
-                        logger.debug(f"跳过旧请求: {request.url}, 时间: {req_timestamp} < {start_time}")
-                        continue
+                # 检查是否有新请求
+                if current_request_count == last_request_count:
+                    no_new_requests_count += 1
+                    if no_new_requests_count >= max_no_new_requests:
+                        remaining_time = timeout - (time.time() - monitor_start_time)
+                        if remaining_time > 30:  # 如果剩余时间超过30秒，缩短到30秒
+                            logger.info(f"连续{max_no_new_requests}次检查无新请求，缩短超时时间到30秒")
+                            timeout = (time.time() - monitor_start_time) + 30
+                        no_new_requests_count = 0  # 重置计数器
+                else:
+                    no_new_requests_count = 0
+                    logger.debug(f"检测到新请求: {current_request_count - last_request_count}个")
                 
-                # 检查URL匹配
-                url_matched = url_pattern in request.url if isinstance(url_pattern, str) else bool(re.search(url_pattern, request.url))
+                last_request_count = current_request_count
                 
-                # 检查请求方法匹配
-                method_matched = True
-                if methods:
-                    method_matched = request.method.upper() in [m.upper() for m in methods]
-                
-                # 检查请求体匹配
-                payload_matched = True
-                if payload_pattern and isinstance(payload_pattern, dict):
-                    try:
-                        # 获取请求体，尝试解析为JSON
-                        request_body = request.body
-                        if request_body:
-                            if isinstance(request_body, bytes):
-                                request_body = request_body.decode('utf-8')
-                            
-                            if request_body.strip():
-                                try:
-                                    request_payload = json.loads(request_body)
-                                    
-                                    # 检查是否包含所有指定的键值对
-                                    for key, value in payload_pattern.items():
-                                        if key not in request_payload or request_payload[key] != value:
-                                            payload_matched = False
-                                            break
-                                except json.JSONDecodeError as e:
-                                    logger.warning(f"请求体解析JSON失败: {e}")
+                for request in current_requests:
+                    if not request.response:
+                        continue  # 跳过未完成的请求
+                    
+                    # 检查请求时间（如果可用）
+                    if hasattr(request, 'date') and request.date:
+                        req_timestamp = request.date.timestamp()
+                        if req_timestamp < start_time:
+                            logger.debug(f"跳过旧请求: {request.url}")
+                            continue
+                    
+                    # 检查URL匹配
+                    url_matched = url_pattern in request.url if isinstance(url_pattern, str) else bool(re.search(url_pattern, request.url))
+                    
+                    # 检查请求方法匹配
+                    method_matched = True
+                    if methods:
+                        method_matched = request.method.upper() in [m.upper() for m in methods]
+                    
+                    # 检查请求体匹配
+                    payload_matched = True
+                    if payload_pattern and isinstance(payload_pattern, dict):
+                        try:
+                            request_body = request.body
+                            if request_body:
+                                if isinstance(request_body, bytes):
+                                    request_body = request_body.decode('utf-8')
+                                
+                                if request_body.strip():
+                                    try:
+                                        request_payload = json.loads(request_body)
+                                        for key, value in payload_pattern.items():
+                                            if key not in request_payload or request_payload[key] != value:
+                                                payload_matched = False
+                                                break
+                                    except json.JSONDecodeError:
+                                        payload_matched = False
+                                else:
                                     payload_matched = False
                             else:
                                 payload_matched = False
-                        else:
+                        except Exception as e:
+                            logger.warning(f"解析请求体时出错: {e}")
                             payload_matched = False
-                    except Exception as e:
-                        logger.warning(f"解析请求体时出错: {e}")
-                        payload_matched = False
-                
-                # 如果所有条件都匹配，返回响应体
-                if url_matched and method_matched and payload_matched:
-                    try:
-                        # 打印匹配信息
-                        logger.info(f"匹配到API请求: {request.url} ({request.method})")
-                        if request.body:
-                            body_text = request.body
-                            if isinstance(body_text, bytes):
-                                body_text = body_text.decode('utf-8')
-                            logger.debug(f"请求体: {body_text[:200]}...")
-                        
-                        # 解析响应体为JSON
-                        response_body = request.response.body
-                        if isinstance(response_body, bytes):
-                            response_body = response_body.decode('utf-8')
-                        
+                    
+                    # 如果所有条件都匹配，返回响应体
+                    if url_matched and method_matched and payload_matched:
                         try:
-                            response_data = json.loads(response_body)
+                            logger.info(f"匹配到API请求: {request.url} ({request.method})")
                             
-                            # 记录响应时间
-                            response_time = time.time()
-                            logger.info(f"API响应获取成功，耗时: {response_time - start_time:.2f}秒")
+                            # 解析响应体为JSON
+                            response_body = request.response.body
+                            if isinstance(response_body, bytes):
+                                response_body = response_body.decode('utf-8')
                             
-                            # 如果有回调函数，调用它
-                            if callback and callable(callback):
-                                callback(response_data)
-                            
-                            return response_data
-                        except json.JSONDecodeError as e:
-                            logger.warning(f"响应体解析JSON失败: {e}")
-                            logger.debug(f"原始响应内容: {response_body[:200]}...")
+                            try:
+                                response_data = json.loads(response_body)
+                                response_time = time.time()
+                                logger.info(f"API响应获取成功，耗时: {response_time - start_time:.2f}秒")
+                                
+                                # 如果有回调函数，调用它
+                                if callback and callable(callback):
+                                    try:
+                                        callback(response_data)
+                                    except Exception as e:
+                                        logger.warning(f"回调函数执行失败: {e}")
+                                
+                                return response_data
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"响应体解析JSON失败: {e}")
+                                continue
+                        except Exception as e:
+                            logger.warning(f"处理响应时出错: {str(e)}")
                             continue
-                    except Exception as e:
-                        logger.warning(f"处理响应时出错: {str(e)}")
-                        continue
-            
-            # 等待一小段时间再检查
-            time.sleep(0.5)
-        
-        # 超时，打印所有捕获的请求供调试
-        logger.warning(f"API监控超时({timeout}秒)，未找到匹配的响应。已捕获的请求:")
-        for i, request in enumerate(driver.requests):
-            if not request.response:
-                continue
                 
-            logger.debug(f"{i+1}. {request.method} {request.url}")
-            if hasattr(request, 'date') and request.date:
-                logger.debug(f"   时间: {request.date.isoformat()}")
-            if request.body:
-                body_text = request.body
-                if isinstance(body_text, bytes):
-                    try:
-                        body_text = body_text.decode('utf-8')
-                    except:
-                        body_text = "<二进制数据>"
-                logger.debug(f"   请求体: {body_text[:200]}{'...' if len(str(body_text)) > 200 else ''}")
+                # 等待一小段时间再检查
+                time.sleep(check_interval)
+                
+            except Exception as e:
+                logger.error(f"监控过程中出错: {e}")
+                time.sleep(check_interval)
+        
+        # 超时处理
+        elapsed_time = time.time() - monitor_start_time
+        logger.warning(f"API监控超时({elapsed_time:.1f}秒)，未找到匹配的响应")
+        
+        # 记录调试信息
+        try:
+            recent_requests = [req for req in driver.requests if req.response][-10:]  # 最近10个请求
+            logger.debug(f"最近捕获的请求 ({len(recent_requests)}):")
+            for i, request in enumerate(recent_requests):
+                logger.debug(f"{i+1}. {request.method} {request.url}")
+        except Exception as e:
+            logger.debug(f"记录调试信息时出错: {e}")
         
         return None
+        
     except Exception as e:
         logger.error(f"监控API响应出错: {str(e)}")
         return None

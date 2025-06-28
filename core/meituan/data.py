@@ -147,7 +147,7 @@ def perform_advanced_search(driver, wait, target_org, config, date_str=None):
         summary_data = monitor_api_response(
             driver,
             "https://pos.meituan.com/web/api/v2/reports/combine/business-summary-page",
-            max_wait_time=config["API_TIMEOUT"],
+            max_wait_time=config.get("API_TIMEOUT", 60),  # 添加默认值防止KeyError
             methods=['POST', 'GET'],
             start_time=query_start_time
         )
@@ -258,7 +258,7 @@ def get_warehouse_list(driver, config):
         monitor_api_response(
             driver,
             "/tree/paged/query",
-            max_wait_time=config["API_TIMEOUT"],
+            max_wait_time=config.get("API_TIMEOUT", 60),  # 添加默认值防止KeyError
             callback=process_tree_query_response,
             methods=['POST']
         )

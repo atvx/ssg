@@ -138,8 +138,28 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
         # 使用配置字典初始化浏览器
         driver = init_chrome_driver(config=browser_config)
         
-        # 检查是否已登录
+        # 先访问美团登录页面
         driver.get(LOGIN_URL)
+        time.sleep(2)
+        
+        # 尝试加载之前保存的cookies（如果存在）
+        cookies_file = "cookies_meituan.json"
+        if os.path.exists(cookies_file):
+            logger.info(f"发现cookies文件 {cookies_file}，尝试加载...")
+            try:
+                from utils.file_utils import load_cookies
+                if load_cookies(driver, cookies_file):
+                    logger.info("成功加载cookies，刷新页面以应用登录状态")
+                    driver.refresh()
+                    time.sleep(3)
+                else:
+                    logger.warning("加载cookies失败")
+            except Exception as e:
+                logger.warning(f"加载cookies时出错: {e}")
+        else:
+            logger.info("未发现cookies文件，将需要重新登录")
+        
+        # 检查是否已登录
         logger.info("正在检查登录状态...")
         login_status = check_login(driver)
         
@@ -207,7 +227,7 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
         warehouse_response = monitor_api_response(
             driver,
             "/tree/paged/query",  # URL匹配模式
-            timeout=120,  # 超时时间
+            timeout=settings.API_MONITOR_TIMEOUT,  # 使用配置的超时时间
             methods=['POST']
         )
 
@@ -215,7 +235,31 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
         warehouses = extract_warehouses(warehouse_response)
         if not warehouses:
             logger.error("未找到任何仓库")
-            task_result["message"] = "API响应中未找到仓库数据"
+            # 尝试重新获取一次
+            logger.info("尝试重新获取仓库列表...")
+            time.sleep(5)
+            try:
+                # 刷新页面重试
+                driver.refresh()
+                time.sleep(3)
+                hide_all_popups(driver)
+                
+                warehouse_response = monitor_api_response(
+                    driver,
+                    "/tree/paged/query",
+                    timeout=settings.API_RETRY_TIMEOUT,  # 第二次尝试使用重试超时配置
+                    methods=['POST']
+                )
+                warehouses = extract_warehouses(warehouse_response)
+                
+                if not warehouses:
+                    task_result["message"] = "重试后仍无法获取仓库数据，可能是网络连接问题"
+                    return task_result
+                else:
+                    logger.info(f"重试成功，获取到 {len(warehouses)} 个仓库")
+            except Exception as retry_e:
+                logger.error(f"重试获取仓库列表失败: {retry_e}")
+                task_result["message"] = f"获取仓库数据失败: 初次尝试和重试都失败"
             return task_result
             
         logger.info(f"成功获取 {len(warehouses)} 个仓库")
@@ -228,7 +272,7 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
         try:
             from tqdm import tqdm
             api_config = {
-                "API_TIMEOUT": 60,
+                "API_TIMEOUT": settings.NETWORK_TIMEOUT,  # 使用配置的网络超时时间
                 "BUSINESS_SUMMARY_URL": "https://pos.meituan.com/web/api/v2/reports/combine/business-summary-page",
             }
             

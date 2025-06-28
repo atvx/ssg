@@ -11,10 +11,14 @@ import requests
 import zipfile
 import tarfile
 import shutil
+import logging
 from pathlib import Path
 
 from config.settings import settings
-from utils.file_utils import kill_chrome_processes
+from utils.file_utils import kill_chrome_processes, force_kill_processes
+from utils.chrome_cleanup import ChromeCleanup
+
+logger = logging.getLogger(__name__)
 
 
 def get_platform_info():
@@ -357,12 +361,23 @@ def init_chrome_driver(config, force_new_session=False):
         config: 配置字典
         force_new_session (bool): 如果为True，不使用现有的用户数据目录
     """
-    # 在启动前清理可能的僵尸Chrome进程
+    # 检查是否需要清理Chrome进程（仅清理进程，不清理用户数据）
     try:
-        kill_chrome_processes()
-        time.sleep(2)  # 增加等待时间，确保进程完全终止
+        # 使用优化的Chrome清理工具，但只清理进程
+        cleaner = ChromeCleanup()
+        
+        # 如果Chrome仍在运行，等待其退出
+        if cleaner.is_chrome_running():
+            logger.info("检测到Chrome进程正在运行，等待退出...")
+            cleaner.wait_for_chrome_exit(timeout=3)
+        
+        # 只清理Chrome进程，不清理用户数据
+        force_kill_processes(['chrome', 'chromedriver', 'Google Chrome'])
+        
+        # 等待确保清理完成
+        time.sleep(1)
     except Exception as e:
-        print(f"清理Chrome进程时出错（非致命）: {e}")
+        logger.warning(f"Chrome进程清理时出现非关键错误: {e}")
 
     # 多次尝试启动浏览器
     max_attempts = 3
@@ -372,20 +387,38 @@ def init_chrome_driver(config, force_new_session=False):
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--window-size=1280,800")  # 减小窗口大小
+            chrome_options.add_argument("--window-size=1280,800")
+            
+            # 确定用户数据目录
+            user_data_dir = None
+            if force_new_session:
+                # 如果强制新会话，使用临时目录
+                user_data_dir = get_temp_dir()
+                logger.info("使用强制新会话模式，使用临时目录")
+            else:
+                # 优先使用配置中的用户数据目录
+                configured_dir = config.get("USER_DATA_DIR")
+                if configured_dir and os.path.exists(os.path.dirname(os.path.abspath(configured_dir))):
+                    user_data_dir = os.path.abspath(configured_dir)
+                    # 确保目录存在
+                    os.makedirs(user_data_dir, exist_ok=True)
+                    logger.info(f"使用配置的用户数据目录: {user_data_dir}")
+                else:
+                    # 配置目录不可用，使用临时目录
+                    user_data_dir = get_temp_dir()
+                    logger.warning(f"配置的用户数据目录不可用，使用临时目录: {user_data_dir}")
+            
+            # 设置用户数据目录
+            chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
             
             # 添加以下代码，处理无头模式
             if config.get("HEADLESS", False):
-                print("启用无头模式运行Chrome")
+                logger.info("启用无头模式运行Chrome")
                 chrome_options.add_argument("--headless=new")  # 使用新的headless模式
                 # 添加解决DevToolsActivePort问题的参数
                 chrome_options.add_argument("--remote-debugging-port=9222")
                 chrome_options.add_argument("--disable-dev-shm-usage")
                 chrome_options.add_argument("--no-sandbox")
-                
-                # 使用跨平台临时目录
-                data_dir = get_temp_dir()
-                chrome_options.add_argument(f"--user-data-dir={data_dir}")
                 
                 # 禁用可能导致问题的功能
                 chrome_options.add_argument("--disable-extensions")
@@ -425,22 +458,17 @@ def init_chrome_driver(config, force_new_session=False):
             chrome_options.add_argument("--disable-logging")
             chrome_options.add_experimental_option('excludeSwitches', ['enable-automation', 'enable-logging'])
             
-            # 强制使用临时目录，不使用用户数据目录，解决远程环境问题
-            temp_dir = get_temp_dir()
-            chrome_options.add_argument(f"--user-data-dir={temp_dir}")
-            print(f"使用新会话模式，不加载用户数据目录")
-            
             # 查找ChromeDriver路径
             chromedriver_path = find_chromedriver()
             if not chromedriver_path:
-                print("未找到ChromeDriver，尝试自动下载...")
+                logger.info("未找到ChromeDriver，尝试自动下载...")
                 chromedriver_path = download_chromedriver()
                 
             if not chromedriver_path:
-                print("无法找到或下载ChromeDriver，请手动安装")
+                logger.error("无法找到或下载ChromeDriver，请手动安装")
                 raise Exception("ChromeDriver未找到")
             
-            print(f"使用ChromeDriver: {chromedriver_path}")
+            logger.info(f"使用ChromeDriver: {chromedriver_path}")
             
             # 设置服务超时参数
             service = Service(
@@ -469,10 +497,10 @@ def init_chrome_driver(config, force_new_session=False):
                 # 设置请求过滤范围
                 scopes = config.get("MONITOR_SCOPES", [r'.*pos\.meituan\.com.*'])
                 
-                print(f"使用ChromeDriver: {chromedriver_path}")
+                logger.info(f"使用ChromeDriver: {chromedriver_path}")
                 
                 # 创建driver
-                print("尝试启动Chrome浏览器...")
+                logger.info("尝试启动Chrome浏览器...")
                 driver = wire_webdriver.Chrome(
                     service=service,
                     options=chrome_options, 
@@ -486,10 +514,10 @@ def init_chrome_driver(config, force_new_session=False):
                 driver.set_script_timeout(20)
                 driver.set_page_load_timeout(45)
                 
-                print(f"已启用API监控，监控范围: {scopes}")
+                logger.info(f"已启用API监控，监控范围: {scopes}")
             else:
                 # 使用标准webdriver
-                print("尝试启动Chrome浏览器...")
+                logger.info("尝试启动Chrome浏览器...")
                 driver = webdriver.Chrome(service=service, options=chrome_options)
                 
                 # 降低超时时间
@@ -500,10 +528,10 @@ def init_chrome_driver(config, force_new_session=False):
             try:
                 browser_version = driver.capabilities['browserVersion']
                 driver_version = driver.capabilities['chrome']['chromedriverVersion'].split(' ')[0]
-                print(f"Chrome浏览器版本: {browser_version}")
-                print(f"ChromeDriver版本: {driver_version}")
+                logger.info(f"Chrome浏览器版本: {browser_version}")
+                logger.info(f"ChromeDriver版本: {driver_version}")
             except Exception as e:
-                print(f"获取浏览器版本信息失败: {e}")
+                logger.warning(f"获取浏览器版本信息失败: {e}")
             
             # 防止检测
             try:
@@ -522,18 +550,18 @@ def init_chrome_driver(config, force_new_session=False):
                     if (window.Notification) window.Notification.permission = 'default';
                     """)
             except Exception as e:
-                print(f"设置反检测脚本时出错: {e}")
+                logger.warning(f"设置反检测脚本时出错: {e}")
             
-            print("Chrome浏览器已成功启动")
+            logger.info("Chrome浏览器已成功启动")
             return driver
             
         except Exception as e:
             error_message = str(e).lower()
-            print(f"浏览器启动失败 (尝试 {attempt+1}/{max_attempts}): {error_message}")
+            logger.error(f"浏览器启动失败 (尝试 {attempt+1}/{max_attempts}): {error_message}")
             
             if attempt < max_attempts - 1:
-                print("正在清理并重试...")
-                kill_chrome_processes()
+                logger.info("正在清理并重试...")
+                force_kill_processes(['chrome', 'chromedriver', 'Google Chrome'])
                 time.sleep(5)  # 等待更长时间
             else:
                 raise Exception(f"多次尝试后仍无法启动浏览器: {e}")

@@ -185,6 +185,14 @@ class ConnectionManager:
         """
         if client_id in self.active_connections:
             try:
+                websocket = self.active_connections[client_id]
+                
+                # 检查连接状态
+                if hasattr(websocket, 'client_state') and websocket.client_state.name != 'CONNECTED':
+                    logger.warning(f"客户端 {client_id} 连接状态异常: {websocket.client_state.name}")
+                    self.disconnect(client_id)
+                    return False
+                
                 # 确保消息是字典格式
                 if not isinstance(message, dict):
                     logger.warning(f"消息不是字典格式，尝试转换: {message}")
@@ -197,10 +205,12 @@ class ConnectionManager:
                         logger.error(f"消息格式转换失败: {e}")
                         message = {"type": "error", "message": "消息格式错误"}
                 
-                await self.active_connections[client_id].send_json(message)
+                await websocket.send_json(message)
                 return True
             except Exception as e:
                 logger.error(f"发送消息失败: {e}")
+                # 连接可能已断开，清理连接
+                self.disconnect(client_id)
                 return False
         return False
     
@@ -243,6 +253,12 @@ class ConnectionManager:
                     logger.debug(f"客户端 {client_id} 已订阅频道 {channel}，准备广播")
             
             try:
+                # 检查连接状态
+                if hasattr(websocket, 'client_state') and websocket.client_state.name != 'CONNECTED':
+                    logger.warning(f"客户端 {client_id} 连接状态异常: {websocket.client_state.name}")
+                    disconnected_clients.append(client_id)
+                    continue
+                
                 await websocket.send_json(message)
                 sent_count += 1
                 logger.debug(f"成功向客户端 {client_id} 发送消息")
