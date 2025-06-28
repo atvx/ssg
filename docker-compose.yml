@@ -85,6 +85,10 @@ services:
       # Chrome配置
       - CHROME_HEADLESS=true
       - SELENIUM_HEADLESS=true
+      # 文件上传配置 - 使用本地模式
+      - UPLOAD_DRIVER=local
+      - APP_DOMAIN=http://localhost:3400
+      - MEDIA_PREFIX=/images
     ulimits:
       nofile:
         soft: 65536
@@ -136,6 +140,7 @@ services:
       - /etc/timezone:/etc/timezone:ro
       # 添加selenium_setup.py
       - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
+
     environment:
       - APP_NAME=销售数据获取系统
       - DEBUG=False
@@ -185,6 +190,10 @@ services:
       # Chrome配置
       - CHROME_HEADLESS=true
       - SELENIUM_HEADLESS=true
+      # 文件上传配置 - 使用本地模式
+      - UPLOAD_DRIVER=local
+      - APP_DOMAIN=http://localhost:3400
+      - MEDIA_PREFIX=/images
     ulimits:
       nofile:
         soft: 65536

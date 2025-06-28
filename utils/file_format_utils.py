@@ -95,9 +95,12 @@ def set_excel_landscape_format(xlsx_path: str, sheetname: str = None):
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
         ws.page_setup.paperSize = ws.PAPERSIZE_A4
         
-        # 一页宽（不限行数）
+        # 一页宽（不限行数）- 确保表格在横向上适应一页
         ws.page_setup.fitToWidth = 1
         ws.page_setup.fitToHeight = 0
+        
+        # 确保启用适应页面模式而不是百分比缩放
+        ws.page_setup.fitToPage = True
         
         # 内容水平居中
         ws.print_options.horizontalCentered = True
@@ -197,12 +200,12 @@ def convert_xlsx_to_pdf(xlsx_path: Path, output_dir: Path = None) -> Path:
         xlsx_path_str = str(xlsx_path)
         output_dir_str = str(output_dir)
         
-        # 增强转换参数，添加编码相关参数
+        # 增强转换参数，移除强制分页设置，保持Excel原有格式
         cmd = [
             soffice_path, 
             "--headless",
             "--infilter=Calc8",
-            "--convert-to", "pdf:calc_pdf_Export:{'EmbedComplexScriptFonts':true,'EmbedFonts':true,'ExportNotes':false,'ScaleToPages':1,'SinglePageSheets':true}",
+            "--convert-to", "pdf:calc_pdf_Export:{'EmbedComplexScriptFonts':true,'EmbedFonts':true,'ExportNotes':false}",
             "--outdir", output_dir_str,
             xlsx_path_str
         ]
