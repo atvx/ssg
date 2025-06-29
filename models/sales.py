@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Date, DateTime, DECIMAL, UniqueConstraint
-from datetime import datetime
+from datetime import datetime, timezone
 
 from db.database import Base
 
@@ -14,8 +14,8 @@ class SalesRecord(Base):
     income_amt = Column(DECIMAL(10, 2), nullable=False)  # 收入金额
     sales_cart_count = Column(Integer, nullable=False)   # 销售数量
     avg_income_amt = Column(DECIMAL(10, 2), nullable=False)  # 平均收入
-    created_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC), onupdate=lambda: datetime.now(datetime.UTC))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # 使用平台+日期+仓库名称作为唯一约束
     __table_args__ = (

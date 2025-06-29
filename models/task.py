@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 
 from db.database import Base
 
@@ -16,8 +16,8 @@ class Task(Base):
     result = Column(Text)  # 存储JSON格式的结果
     error = Column(Text)
     params = Column(Text)  # 存储JSON格式的参数，如查询日期等
-    created_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC), onupdate=lambda: datetime.now(datetime.UTC))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # 与用户表关联
     user = relationship("User", back_populates="tasks")
