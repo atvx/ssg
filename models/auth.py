@@ -11,6 +11,6 @@ class AuthSession(Base):
     platform = Column(String(20), nullable=False)  # "meituan" 或 "duowei"
     status = Column(String(20), nullable=False)  # "active", "expired", "failed"
     cookies = Column(Text)  # JSON格式的cookies
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC))
     expires_at = Column(DateTime)
     last_used = Column(DateTime)

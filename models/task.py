@@ -16,8 +16,8 @@ class Task(Base):
     result = Column(Text)  # 存储JSON格式的结果
     error = Column(Text)
     params = Column(Text)  # 存储JSON格式的参数，如查询日期等
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(datetime.UTC), onupdate=lambda: datetime.now(datetime.UTC))
     
     # 与用户表关联
     user = relationship("User", back_populates="tasks")

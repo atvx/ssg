@@ -33,6 +33,7 @@ class SalesRecordResponse(SalesRecordBase):
     """销售记录响应模型"""
     id: int = Field(..., description="记录编号")
     created_at: Optional[datetime] = Field(None, description="创建时间")
+    updated_at: Optional[datetime] = Field(None, description="更新时间")
     
     class Config:
         from_attributes = True

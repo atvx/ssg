@@ -66,8 +66,8 @@ def create_user(db: Session, user: user_schema.UserCreate):
         hashed_password=hashed_password,
         is_active=False,  # 默认未激活
         is_superuser=False,  # 默认非超级用户
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=datetime.now(datetime.UTC),
+        updated_at=datetime.now(datetime.UTC)
     )
     
     try:
@@ -262,6 +262,7 @@ def create_or_update_sales_record(db: Session, record: sales_schema.SalesRecordC
             db_record.income_amt = record.income_amt
             db_record.sales_cart_count = record.sales_cart_count
             db_record.avg_income_amt = record.avg_income_amt
+            # updated_at字段会通过SQLAlchemy的onupdate自动更新
             db.commit()
             db.refresh(db_record)
             return db_record
@@ -317,11 +318,11 @@ def create_auth_session(db: Session, platform: str, status: str, cookies: Option
         platform=platform,
         status=status,
         cookies=cookies,
-        created_at=datetime.utcnow(),
-        last_used=datetime.utcnow()
+        created_at=datetime.now(datetime.UTC),
+        last_used=datetime.now(datetime.UTC)
     )
     if status == "active":
-        db_session.expires_at = datetime.utcnow() + datetime.timedelta(days=7)
+        db_session.expires_at = datetime.now(datetime.UTC) + datetime.timedelta(days=7)
     
     db.add(db_session)
     db.commit()
@@ -335,9 +336,9 @@ def update_auth_session(db: Session, session_id: int, status: str, cookies: Opti
         db_session.status = status
         if cookies:
             db_session.cookies = cookies
-        db_session.last_used = datetime.utcnow()
+        db_session.last_used = datetime.now(datetime.UTC)
         if status == "active":
-            db_session.expires_at = datetime.utcnow() + datetime.timedelta(days=7)
+            db_session.expires_at = datetime.now(datetime.UTC) + datetime.timedelta(days=7)
         db.commit()
         db.refresh(db_session)
     return db_session
@@ -533,8 +534,8 @@ def create_org(db: Session, org: org_schema.OrgCreate):
         status=1,  # 默认启用状态
         per_car_target=org.per_car_target,
         cost_rate=org.cost_rate,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=datetime.now(datetime.UTC),
+        updated_at=datetime.now(datetime.UTC)
     )
     
     try:

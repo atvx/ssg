@@ -4,7 +4,6 @@ from datetime import datetime, date, timedelta
 import logging
 
 from models.sales import SalesRecord as DBSalesRecord
-from schemas.sales import SalesRecord
 
 logger = logging.getLogger(__name__)
 
