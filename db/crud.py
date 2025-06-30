@@ -867,3 +867,269 @@ def get_daily_sales_data(db: Session, query_date: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"获取日报销售数据失败: {str(e)}")
         raise
+
+
+def get_weekly_stats_data(
+    db: Session, 
+    this_week_start: str, 
+    this_week_end: str,
+    last_week_start: str, 
+    last_week_end: str
+) -> List[Dict[str, Any]]:
+    """
+    获取周度统计数据
+    
+    Args:
+        db: 数据库会话
+        this_week_start: 本周开始日期 (YYYY-MM-DD)
+        this_week_end: 本周结束日期 (YYYY-MM-DD) 
+        last_week_start: 上周开始日期 (YYYY-MM-DD)
+        last_week_end: 上周结束日期 (YYYY-MM-DD)
+        
+    Returns:
+        List[Dict]: 周度统计数据列表
+    """
+    try:
+        # 构建周度统计SQL查询
+        sql_query = text("""
+        -- 本周
+        WITH this_week AS (
+            SELECT
+                c.id,
+                ROUND(SUM(s.income_amt), 0) AS sales,
+                SUM(s.sales_cart_count) AS cart
+            FROM orgs c
+            LEFT JOIN sales_records s ON s.warehouse_name = c.name AND s.date BETWEEN :this_week_start AND :this_week_end
+            WHERE c.org_type = 3 AND c.status = 1
+            GROUP BY c.id
+        ),
+        -- 上周
+        last_week AS (
+            SELECT
+                c.id,
+                ROUND(SUM(s.income_amt), 0) AS sales,
+                SUM(s.sales_cart_count) AS cart
+            FROM orgs c
+            LEFT JOIN sales_records s ON s.warehouse_name = c.name AND s.date BETWEEN :last_week_start AND :last_week_end
+            WHERE c.org_type = 3 AND c.status = 1
+            GROUP BY c.id
+        ) 
+        SELECT
+            c.name,
+            t.car_count,
+            IFNULL(tw.sales, 0) AS this_week_sales,
+            IFNULL(lw.sales, 0) AS last_week_sales,
+            ROUND((IFNULL(tw.sales, 0) - IFNULL(lw.sales, 0)) / NULLIF(IFNULL(lw.sales, 0), 0) * 100, 1) AS sales_wow_pct,
+            ROUND(IFNULL(tw.sales, 0) / NULLIF(IFNULL(tw.cart, 0), 0), 0) AS this_week_avg,
+            ROUND(IFNULL(lw.sales, 0) / NULLIF(IFNULL(lw.cart, 0), 0), 0) AS last_week_avg,
+            ROUND(((IFNULL(tw.sales, 0) / NULLIF(IFNULL(tw.cart, 0), 0)) - (IFNULL(lw.sales, 0) / NULLIF(IFNULL(lw.cart, 0), 0))) / NULLIF((IFNULL(tw.sales, 0) / NULLIF(IFNULL(tw.cart, 0), 0)), 0) * 100, 1) AS avg_wow_pct,
+            IFNULL(tw.cart, 0) AS this_week_cart,
+            IFNULL(lw.cart, 0) AS last_week_cart,
+            ROUND((IFNULL(tw.cart, 0) - IFNULL(lw.cart, 0)) / NULLIF(IFNULL(lw.cart, 0), 0) * 100, 1) AS cart_wow_pct,
+            ROUND(IFNULL(tw.cart, 0) / 7, 0) AS this_daily_cart,
+            ROUND(IFNULL(lw.cart, 0) / 7, 0) AS last_daily_cart,
+            ROUND(((IFNULL(tw.cart, 0) / 7) - (IFNULL(lw.cart, 0) / 7)) / NULLIF(IFNULL(lw.cart, 0) / 7, 0) * 100, 1) AS daily_cart_wow_pct
+        FROM orgs c
+        LEFT JOIN orgs p ON p.id = c.parent_id
+        LEFT JOIN this_week tw ON tw.id = c.id
+        LEFT JOIN last_week lw ON lw.id = c.id
+        LEFT JOIN sales_target t ON t.org_name = c.name
+        WHERE c.org_type = 3 AND c.status = 1
+        ORDER BY p.sort, c.sort;
+        """)
+        
+        # 执行查询
+        result = db.execute(sql_query, {
+            'this_week_start': this_week_start,
+            'this_week_end': this_week_end,
+            'last_week_start': last_week_start,
+            'last_week_end': last_week_end
+        })
+        
+        # 将结果转换为字典列表
+        columns = result.keys()
+        rows = result.fetchall()
+        
+        weekly_data = []
+        for row in rows:
+            row_dict = dict(zip(columns, row))
+            
+            # 处理None值和数值格式化
+            for key, value in row_dict.items():
+                if value is None:
+                    if key in ['car_count', 'this_week_sales', 'last_week_sales', 'this_week_cart', 'last_week_cart', 
+                              'this_week_avg', 'last_week_avg', 'this_daily_cart', 'last_daily_cart']:
+                        row_dict[key] = 0
+                    elif key in ['sales_wow_pct', 'avg_wow_pct', 'cart_wow_pct', 'daily_cart_wow_pct']:
+                        row_dict[key] = 0.0
+                elif isinstance(value, Decimal):
+                    row_dict[key] = float(value)
+            
+            weekly_data.append(row_dict)
+        
+        logger.info(f"成功获取周度统计数据，共 {len(weekly_data)} 条记录")
+        return weekly_data
+        
+    except SQLAlchemyError as e:
+        logger.error(f"获取周度统计数据数据库错误: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"获取周度统计数据失败: {str(e)}")
+        raise
+
+
+def get_monthly_stats_data(db: Session, query_date: str) -> List[Dict[str, Any]]:
+    """
+    获取月度统计数据
+    
+    Args:
+        db: 数据库会话
+        query_date: 查询日期 (YYYY-MM-DD)，将获取从当月1号到该日期的累计数据
+        
+    Returns:
+        List[Dict]: 月度统计数据列表
+    """
+    try:
+        # 构建月度统计SQL查询
+        sql_query = text("""
+        SELECT
+            c.id,
+            c.name,
+            c.status,
+            IFNULL(t.car_count, 0) AS car_count,
+            ROUND(IFNULL(t.target_income, 0), 0) AS target_income,
+            ROUND(IFNULL(mtd.total_income_amt, 0), 0) AS actual_income,
+            ROUND(IFNULL(mtd.ach_rate, 0), 1) AS ach_rate,
+            ROUND(IFNULL(mtd.per_car_income, 0), 0) AS per_car_income,
+            IFNULL(mtd.total_sales_cart_count, 0) AS sold_car_count
+        FROM orgs AS c
+        LEFT JOIN orgs AS p ON p.id = c.parent_id
+        LEFT JOIN sales_records AS d ON d.warehouse_name = c.name AND d.DATE = :query_date
+        LEFT JOIN sales_target AS t ON t.org_name = c.name AND t.year = YEAR(:query_date) AND t.month = MONTH(:query_date)
+        LEFT JOIN (
+            SELECT
+                sr.warehouse_name,
+                SUM(sr.income_amt) AS total_income_amt,
+                SUM(sr.sales_cart_count) AS total_sales_cart_count,
+                ROUND(SUM(sr.income_amt) / NULLIF(SUM(sr.sales_cart_count), 0), 2) AS per_car_income,
+                CASE 
+                    WHEN IFNULL(MAX(st.target_income), 0) = 0 THEN 100
+                    ELSE ROUND(SUM(sr.income_amt) / NULLIF(MAX(st.target_income), 0) * 100, 1)
+                END AS ach_rate
+            FROM
+                sales_records sr
+                LEFT JOIN sales_target st ON st.org_name = sr.warehouse_name 
+                AND st.year = YEAR(:query_date) 
+                AND st.month = MONTH(:query_date) 
+            WHERE
+                sr.date BETWEEN DATE_FORMAT(:query_date, '%Y-%m-01') 
+                AND :query_date 
+            GROUP BY sr.warehouse_name 
+        ) AS mtd ON mtd.warehouse_name = c.name 
+        WHERE c.org_type = 3
+        ORDER BY p.sort, c.sort;
+        """)
+        
+        # 执行查询
+        result = db.execute(sql_query, {'query_date': query_date})
+        
+        # 将结果转换为字典列表
+        columns = result.keys()
+        rows = result.fetchall()
+        
+        monthly_data = []
+        for row in rows:
+            row_dict = dict(zip(columns, row))
+            
+            # 处理None值和数值格式化
+            for key, value in row_dict.items():
+                if value is None:
+                    if key in ['id', 'status', 'car_count', 'target_income', 'actual_income', 
+                              'per_car_income', 'sold_car_count']:
+                        row_dict[key] = 0
+                    elif key in ['ach_rate']:
+                        row_dict[key] = 0.0
+                    elif key in ['name']:
+                        row_dict[key] = ""
+                elif isinstance(value, Decimal):
+                    row_dict[key] = float(value)
+            
+            monthly_data.append(row_dict)
+        
+        logger.info(f"成功获取月度统计数据，共 {len(monthly_data)} 条记录")
+        return monthly_data
+        
+    except SQLAlchemyError as e:
+        logger.error(f"获取月度统计数据数据库错误: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"获取月度统计数据失败: {str(e)}")
+        raise
+
+
+def get_sales_records_stats_data(db: Session, query_date: str) -> List[Dict[str, Any]]:
+    """
+    获取销售记录统计数据
+    
+    Args:
+        db: 数据库会话
+        query_date: 查询日期 (YYYY-MM-DD)，将获取从当月1号到该日期的所有销售记录
+        
+    Returns:
+        List[Dict]: 销售记录统计数据列表
+    """
+    try:
+        # 构建销售记录统计SQL查询
+        sql_query = text("""
+        SELECT
+            c.id,
+            c.name,
+            c.status,
+            d.date,
+            ROUND(IFNULL(d.income_amt, 0), 2) AS sales_amount
+        FROM orgs AS c
+        LEFT JOIN orgs AS p ON p.id = c.parent_id
+        LEFT JOIN sales_records AS d ON d.warehouse_name = c.name
+        WHERE c.org_type = 3 AND d.date BETWEEN DATE_FORMAT(:query_date, '%Y-%m-01') AND :query_date
+        ORDER BY p.sort, c.sort, d.date;
+        """)
+        
+        # 执行查询
+        result = db.execute(sql_query, {'query_date': query_date})
+        
+        # 将结果转换为字典列表
+        columns = result.keys()
+        rows = result.fetchall()
+        
+        records_data = []
+        for row in rows:
+            row_dict = dict(zip(columns, row))
+            
+            # 处理None值和数值格式化
+            for key, value in row_dict.items():
+                if value is None:
+                    if key in ['id', 'status']:
+                        row_dict[key] = 0
+                    elif key in ['name']:
+                        row_dict[key] = ""
+                    elif key in ['sales_amount']:
+                        row_dict[key] = 0.0
+                    elif key in ['date']:
+                        row_dict[key] = None
+                elif isinstance(value, Decimal):
+                    row_dict[key] = float(value)
+                elif key == 'date' and value is not None:
+                    # 确保日期格式为字符串
+                    row_dict[key] = value.strftime("%Y-%m-%d") if hasattr(value, 'strftime') else str(value)
+            
+            records_data.append(row_dict)
+        
+        logger.info(f"成功获取销售记录统计数据，共 {len(records_data)} 条记录")
+        return records_data
+        
+    except SQLAlchemyError as e:
+        logger.error(f"获取销售记录统计数据数据库错误: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"获取销售记录统计数据失败: {str(e)}")
+        raise

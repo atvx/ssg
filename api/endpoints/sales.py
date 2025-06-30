@@ -9,13 +9,15 @@ from db.database import get_db, SessionLocal
 from db.crud import (
     create_task, get_warehouses, 
     create_monthly_sales_target, get_sales_targets,
-    get_monthly_sales_target, update_monthly_sales_target, delete_monthly_sales_target
+    get_monthly_sales_target, update_monthly_sales_target, delete_monthly_sales_target,
+    get_weekly_stats_data, get_monthly_stats_data, get_sales_records_stats_data
 )
 from services.data_service import get_merged_data, get_all_platforms, get_all_warehouses
 from schemas.sales import (
     SalesRecord, FetchDataRequest, WarehouseInfo,
     MonthlySalesTarget, MonthlySalesTargetCreate, MonthlySalesTargetUpdate,
-    MonthlySalesTargetResponse, MonthlySalesTargetListResponse
+    MonthlySalesTargetResponse, MonthlySalesTargetListResponse,
+    WeeklyStatsResponse, MonthlyStatsResponse, SalesRecordsStatsResponse
 )
 from schemas.task import TaskCreate, Task
 from celery_app.tasks import fetch_meituan_task, fetch_duowei_task, fetch_all_data_task
@@ -817,4 +819,263 @@ def export_daily_report(
                 "field": "system",
                 "message": str(e)
             }]
+        )
+
+@router.get("/weekly-stats", response_model=WeeklyStatsResponse, summary="周度统计数据")
+def get_weekly_stats(
+    query_date: Optional[str] = Query(None, description="查询日期（格式 YYYY-MM-DD），为空时默认为当前日期"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取周度统计数据
+    
+    参数:
+    - query_date: 查询日期（格式 YYYY-MM-DD），系统会自动计算所在周的统计数据
+    
+    返回:
+    - 本周和上周的销售对比数据，包括销售额、销售车数、平均收入等指标的同比增长
+    """
+    try:
+        from datetime import datetime, timedelta
+        
+        # 处理日期参数
+        if query_date:
+            try:
+                target_date = datetime.strptime(query_date, "%Y-%m-%d").date()
+                logger.info(f"周度统计: 收到日期参数 {query_date}")
+            except ValueError:
+                return create_error_response(
+                    message="无效的日期格式，应为YYYY-MM-DD",
+                    error_type=ErrorType.VALIDATION_ERROR,
+                    code=status.HTTP_400_BAD_REQUEST,
+                    details=[{
+                        "field": "query_date",
+                        "message": "无效的日期格式，应为YYYY-MM-DD"
+                    }]
+                )
+        else:
+            # 未提供日期参数，使用当前日期
+            target_date = datetime.now().date()
+            logger.info(f"周度统计: 未提供日期参数，使用当前日期 {target_date}")
+        
+        # 计算本周的周一和周日
+        def get_week_range(date):
+            """计算指定日期所在周的周一和周日"""
+            # 获取指定日期是周几 (0=Monday, 6=Sunday)
+            weekday = date.weekday()
+            
+            # 计算本周周一
+            monday = date - timedelta(days=weekday)
+            # 计算本周周日
+            sunday = monday + timedelta(days=6)
+            
+            return monday, sunday
+        
+        # 获取本周和上周的日期范围
+        this_monday, this_sunday = get_week_range(target_date)
+        last_monday = this_monday - timedelta(days=7)
+        last_sunday = this_sunday - timedelta(days=7)
+        
+        # 转换为字符串格式
+        this_week_start = this_monday.strftime("%Y-%m-%d")
+        this_week_end = this_sunday.strftime("%Y-%m-%d")
+        last_week_start = last_monday.strftime("%Y-%m-%d")
+        last_week_end = last_sunday.strftime("%Y-%m-%d")
+        
+        logger.info(f"周度统计日期范围: 本周({this_week_start} ~ {this_week_end}), 上周({last_week_start} ~ {last_week_end})")
+        
+        # 调用数据库查询函数
+        weekly_data = get_weekly_stats_data(
+            db, 
+            this_week_start, this_week_end,
+            last_week_start, last_week_end
+        )
+        
+        # 构建响应数据
+        response_data = {
+            "query_date": target_date.strftime("%Y-%m-%d"),
+            "date_ranges": {
+                "this_week": {
+                    "start": this_week_start,
+                    "end": this_week_end,
+                    "label": f"{this_week_start} ~ {this_week_end}"
+                },
+                "last_week": {
+                    "start": last_week_start,
+                    "end": last_week_end,
+                    "label": f"{last_week_start} ~ {last_week_end}"
+                }
+            },
+            "warehouses": weekly_data
+        }
+        
+        return create_success_response(
+            message=f"成功获取周度统计数据，查询日期: {target_date.strftime('%Y-%m-%d')}",
+            data=response_data
+        )
+        
+    except Exception as e:
+        logger.error(f"获取周度统计数据失败: {str(e)}")
+        return create_error_response(
+            message=f"获取周度统计数据失败: {str(e)}",
+            error_type=ErrorType.DATABASE_ERROR,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@router.get("/monthly-stats", response_model=MonthlyStatsResponse, summary="月度统计数据")
+def get_monthly_stats(
+    query_date: Optional[str] = Query(None, description="查询日期（格式 YYYY-MM-DD），为空时默认为当前日期"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取月度统计数据
+    
+    参数:
+    - query_date: 查询日期（格式 YYYY-MM-DD），系统会自动计算从当月1号到该日期的累计数据
+    
+    返回:
+    - 月度累计销售数据，包括目标收入、实际收入、达成率、车均收入等指标
+    """
+    try:
+        from datetime import datetime
+        
+        # 处理日期参数
+        if query_date:
+            try:
+                target_date = datetime.strptime(query_date, "%Y-%m-%d").date()
+                logger.info(f"月度统计: 收到日期参数 {query_date}")
+            except ValueError:
+                return create_error_response(
+                    message="无效的日期格式，应为YYYY-MM-DD",
+                    error_type=ErrorType.VALIDATION_ERROR,
+                    code=status.HTTP_400_BAD_REQUEST,
+                    details=[{
+                        "field": "query_date",
+                        "message": "无效的日期格式，应为YYYY-MM-DD"
+                    }]
+                )
+        else:
+            # 未提供日期参数，使用当前日期
+            target_date = datetime.now().date()
+            logger.info(f"月度统计: 未提供日期参数，使用当前日期 {target_date}")
+        
+        # 转换为字符串格式
+        date_str = target_date.strftime("%Y-%m-%d")
+        
+        # 计算月度日期范围
+        month_start = target_date.replace(day=1).strftime("%Y-%m-%d")
+        month_end = date_str
+        
+        logger.info(f"月度统计日期范围: {month_start} ~ {month_end}")
+        
+        # 调用数据库查询函数
+        monthly_data = get_monthly_stats_data(db, date_str)
+        
+        # 构建响应数据
+        response_data = {
+            "query_date": date_str,
+            "month_range": {
+                "start": month_start,
+                "end": month_end,
+                "year": target_date.year,
+                "month": target_date.month,
+                "label": f"{target_date.year}年{target_date.month}月累计（截至{date_str}）"
+            },
+            "warehouses": monthly_data
+        }
+        
+        return create_success_response(
+            message=f"成功获取月度统计数据，查询日期: {date_str}",
+            data=response_data
+        )
+        
+    except Exception as e:
+        logger.error(f"获取月度统计数据失败: {str(e)}")
+        return create_error_response(
+            message=f"获取月度统计数据失败: {str(e)}",
+            error_type=ErrorType.DATABASE_ERROR,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@router.get("/sales-records-stats", response_model=SalesRecordsStatsResponse, summary="销售记录统计数据")
+def get_sales_records_stats(
+    query_date: Optional[str] = Query(None, description="查询日期（格式 YYYY-MM-DD），为空时默认为当前日期"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取销售记录统计数据
+    
+    参数:
+    - query_date: 查询日期（格式 YYYY-MM-DD），系统会获取从当月1号到该日期的所有销售记录
+    
+    返回:
+    - 指定月度范围内的所有销售记录明细，包括仓库信息、日期、销售金额等
+    """
+    try:
+        from datetime import datetime
+        
+        # 处理日期参数
+        if query_date:
+            try:
+                target_date = datetime.strptime(query_date, "%Y-%m-%d").date()
+                logger.info(f"销售记录统计: 收到日期参数 {query_date}")
+            except ValueError:
+                return create_error_response(
+                    message="无效的日期格式，应为YYYY-MM-DD",
+                    error_type=ErrorType.VALIDATION_ERROR,
+                    code=status.HTTP_400_BAD_REQUEST,
+                    details=[{
+                        "field": "query_date",
+                        "message": "无效的日期格式，应为YYYY-MM-DD"
+                    }]
+                )
+        else:
+            # 未提供日期参数，使用当前日期
+            target_date = datetime.now().date()
+            logger.info(f"销售记录统计: 未提供日期参数，使用当前日期 {target_date}")
+        
+        # 转换为字符串格式
+        date_str = target_date.strftime("%Y-%m-%d")
+        
+        # 计算月度日期范围
+        month_start = target_date.replace(day=1).strftime("%Y-%m-%d")
+        month_end = date_str
+        
+        logger.info(f"销售记录统计日期范围: {month_start} ~ {month_end}")
+        
+        # 调用数据库查询函数
+        records_data = get_sales_records_stats_data(db, date_str)
+        
+        # 构建响应数据
+        response_data = {
+            "query_date": date_str,
+            "date_range": {
+                "start": month_start,
+                "end": month_end,
+                "year": target_date.year,
+                "month": target_date.month,
+                "label": f"{target_date.year}年{target_date.month}月销售记录（截至{date_str}）"
+            },
+            "records": records_data,
+            "summary": {
+                "total_records": len(records_data),
+                "total_amount": sum(record.get("sales_amount", 0) for record in records_data),
+                "warehouses_count": len(set(record.get("name") for record in records_data if record.get("name")))
+            }
+        }
+        
+        return create_success_response(
+            message=f"成功获取销售记录统计数据，查询日期: {date_str}",
+            data=response_data
+        )
+        
+    except Exception as e:
+        logger.error(f"获取销售记录统计数据失败: {str(e)}")
+        return create_error_response(
+            message=f"获取销售记录统计数据失败: {str(e)}",
+            error_type=ErrorType.DATABASE_ERROR,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
