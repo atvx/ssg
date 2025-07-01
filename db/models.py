@@ -19,8 +19,8 @@ class MonthlySalesTarget(Base):
     ach_rate = Column(Numeric(3, 1), nullable=True)  # 达成率
     sold_car_count = Column(Integer, nullable=True)  # 销售车辆数
     per_car_income = Column(Numeric(18, 2), nullable=True)  # 车均收入
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 class Org(Base):
     """机构表数据库模型"""
@@ -34,8 +34,8 @@ class Org(Base):
     tenant_id = Column(String(50), nullable=True, index=True, comment="租户编号")
     name = Column(String(255), nullable=True, comment="机构名称")
     poi_id = Column(String(50), nullable=True, comment="门店编号")
-    created_at = Column(DateTime, default=func.now(), comment="创建时间")
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment="更新时间")
+    created_at = Column(DateTime, server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间")
     sort = Column(Integer, nullable=True, comment="排序")
     platform = Column(String(20), nullable=True, comment="平台")
     status = Column(Integer, default=1, nullable=True, comment="状态（0禁用/1正常）")

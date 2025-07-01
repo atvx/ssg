@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date as date_type, datetime
+import logging
 
 from db.database import get_db
 from schemas.record import (
@@ -55,7 +56,8 @@ def list_sales_records(
     start_date: Optional[date_type] = None,
     end_date: Optional[date_type] = None,
     platform: Optional[str] = None,
-    warehouse: Optional[str] = None,
+    name: Optional[str] = None,
+    showEmptyPoi: Optional[int] = Query(0, ge=0, le=1, description="是否展示无数据门店，0：不展示；1：展示"),
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=500, description="返回记录数"),
     db: Session = Depends(get_db),
@@ -68,30 +70,33 @@ def list_sales_records(
     - **start_date**: 开始日期（可选）
     - **end_date**: 结束日期（可选）
     - **platform**: 平台（可选）
-    - **warehouse**: 仓库（可选）
+    - **name**: 仓库名称或父组织名称（可选）
+    - **showEmptyPoi**: 是否展示无数据门店，默认0。0：不展示；1：展示
     - **skip**: 跳过记录数，默认为0
     - **limit**: 返回记录数，默认为100，最大500
     
     返回:
-    - 销售记录列表和总记录数
+    - 销售记录列表、分页信息和汇总信息
     """
     try:
         query = SalesRecordQuery(
             start_date=start_date,
             end_date=end_date,
             platform=platform,
-            warehouse_name=warehouse,
+            name=name,
+            show_empty_poi=showEmptyPoi == 1,
             skip=skip,
             limit=limit
         )
-        records, total = RecordService.get_sales_records(db, query)
+        data = RecordService.get_sales_records(db, query)
         
         return SalesRecordListResponse(
             message="获取销售记录列表成功",
-            data=records,
-            total=total
+            data=data
         )
     except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"获取销售记录列表失败: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取销售记录列表失败: {str(e)}"
