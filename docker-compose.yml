@@ -93,7 +93,7 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    command: bash -c "cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py && python /tmp/selenium_setup_tmp.py && rm -f /tmp/selenium_setup_tmp.py && pip install backoff==2.2.1 urllib3==2.0.7 --root-user-action=ignore && uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120"
+    command: bash -c "cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py && python /tmp/selenium_setup_tmp.py && rm -f /tmp/selenium_setup_tmp.py && pip install backoff==2.2.1 urllib3==2.5.0 --root-user-action=ignore && uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120"
     networks:
       - ssg-network
     # 添加健康检查
@@ -140,66 +140,22 @@ services:
       - /etc/timezone:/etc/timezone:ro
       # 添加selenium_setup.py
       - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
-
-    environment:
-      - APP_NAME=销售数据获取系统
-      - DEBUG=False
-      - API_V1_STR=/api
-      - DATABASE_URL=${DATABASE_URL}  # 连接外部MySQL服务
-      - REDIS_URL=${REDIS_URL}        # 连接外部Redis服务
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-      - SECRET_KEY=${SECRET_KEY}
-      # 添加美团账号相关配置
-      - MEITUAN_PHONE=13884950903
-      - MEITUAN_ORG=叁石哥丰都麻辣鸡
-      - MEITUAN_USERNAME=13884950903
-      - MEITUAN_PASSWORD=sanshige123456
-      # 滑块验证和登录模式
-      - SLIDER_VERIFY_MODE=0
-      - LOGIN_MODE=1
-      # 添加Selenium相关环境变量
-      - PYTHONUNBUFFERED=1
-      - SE_OPTS=--disable-dev-shm-usage
-      - WDM_LOG_LEVEL=0
-      - WDM_SSL_VERIFY=0
-      # JavaScript内存限制
-      - NODE_OPTIONS=--max_old_space_size=2048
-      # 添加Redis连接参数
-      - REDIS_SOCKET_TIMEOUT=60
-      - REDIS_SOCKET_CONNECT_TIMEOUT=30
-      - REDIS_SOCKET_KEEPALIVE=True
-      - REDIS_RETRY_ON_TIMEOUT=True
-      - REDIS_MAX_CONNECTIONS=20
-      # 增加Celery的超时设置
-      - CELERY_TASK_TIME_LIMIT=600
-      - CELERY_TASK_SOFT_TIME_LIMIT=500
-      - CELERY_BROKER_CONNECTION_TIMEOUT=60
-      - CELERY_BROKER_CONNECTION_MAX_RETRIES=10
-      - CELERY_BROKER_HEARTBEAT=30
-      - CELERY_BROKER_POOL_LIMIT=10
-      - CELERY_VISIBILITY_TIMEOUT=43200
-      - TZ=Asia/Shanghai
-      # 添加hostname固定值
-      - CELERY_HOSTNAME=ssg-worker
-      # 添加重试库环境变量
-      - PYTHONPATH=/app
-      # 新增：日报导出相关环境变量
-      - LIBREOFFICE_PATH=/usr/bin/libreoffice
-      - POPPLER_PATH=/usr/bin
-      # Chrome配置
-      - CHROME_HEADLESS=true
-      - SELENIUM_HEADLESS=true
-      # 文件上传配置 - 使用本地模式
-      - UPLOAD_DRIVER=local
-      - APP_DOMAIN=http://localhost:3400
-      - MEDIA_PREFIX=/images
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    # 优化Celery命令，添加backoff库安装
-    command: bash -c "cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py && python /tmp/selenium_setup_tmp.py && rm -f /tmp/selenium_setup_tmp.py && pip install backoff==2.2.1 urllib3==2.0.7 --root-user-action=ignore && celery -A celery_app worker --loglevel=info --concurrency=1 --time-limit=600 --soft-time-limit=500 --hostname=ssg-worker@%h -O fair --heartbeat-interval=60 --without-gossip"
+    command: >
+      bash -c "
+      cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py &&
+      python /tmp/selenium_setup_tmp.py &&
+      rm -f /tmp/selenium_setup_tmp.py &&
+      pip install backoff==2.2.1 urllib3==2.5.0 --root-user-action=ignore &&
+      celery -A celery_app.celery worker
+      --loglevel=INFO
+      --concurrency=2
+      --max-tasks-per-child=100
+      --prefetch-multiplier=1
+      --time-limit=900
+      --soft-time-limit=600
+      --without-heartbeat
+      --without-gossip
+      --without-mingle"
     depends_on:
       api:
         condition: service_healthy
