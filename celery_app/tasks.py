@@ -110,8 +110,23 @@ def fetch_meituan_task(self, task_id: int, date: str = None, user_id: int = None
         
         # 检查是否获取成功
         if not data["success"]:
-            update_task_status(task_id, "failed", 0, error=data["message"])
-            return {"status": "error", "error": data["message"]}
+            error_result = {
+                "success": False,
+                "message": "数据同步失败",
+                "date": reference_date,
+                "execution_mode": "async",
+                "platforms": {
+                    "meituan": {
+                        "success": False,
+                        "message": data["message"],
+                        "platform": "meituan",
+                        "data": [],
+                        "date": reference_date
+                    }
+                }
+            }
+            update_task_status(task_id, "failed", 0, error=data["message"], result=error_result)
+            return {"status": "error", "data": error_result}
         
         # 保存数据到数据库
         # 使用date作为默认日期，如果未提供则使用当前日期
@@ -128,10 +143,27 @@ def fetch_meituan_task(self, task_id: int, date: str = None, user_id: int = None
         except Exception as target_error:
             logger.error(f"美团任务完成后更新月目标时出错: {str(target_error)}")
         
-        # 更新任务状态
-        update_task_status(task_id, "completed", 100, result=data)
+        # 构建成功结果
+        success_result = {
+            "success": True,
+            "message": "全平台数据同步完成",
+            "date": reference_date,
+            "execution_mode": "async",
+            "platforms": {
+                "meituan": {
+                    "success": True,
+                    "message": data["message"],
+                    "platform": "meituan",
+                    "data": data["data"],
+                    "date": reference_date
+                }
+            }
+        }
         
-        return {"status": "success", "data": data}
+        # 更新任务状态
+        update_task_status(task_id, "completed", 100, result=success_result)
+        
+        return {"status": "success", "data": success_result}
     except Exception as e:
         logger.error(f"获取美团数据失败: {str(e)}")
         update_task_status(task_id, "failed", 0, error=str(e))
@@ -165,8 +197,23 @@ def fetch_duowei_task(self, task_id: int, date: str = None, user_id: int = None)
         
         # 检查是否获取成功
         if not result["success"]:
-            update_task_status(task_id, "failed", 0, error=result["message"])
-            return {"status": "error", "error": result["message"]}
+            error_result = {
+                "success": False,
+                "message": "数据同步失败",
+                "date": reference_date,
+                "execution_mode": "async",
+                "platforms": {
+                    "duowei": {
+                        "success": False,
+                        "message": result["message"],
+                        "platform": "duowei",
+                        "data": [],
+                        "date": reference_date
+                    }
+                }
+            }
+            update_task_status(task_id, "failed", 0, error=result["message"], result=error_result)
+            return {"status": "error", "data": error_result}
         
         # 保存数据到数据库
         # 使用date作为默认日期，如果未提供则使用当前日期
@@ -183,10 +230,27 @@ def fetch_duowei_task(self, task_id: int, date: str = None, user_id: int = None)
         except Exception as target_error:
             logger.error(f"多维任务完成后更新月目标时出错: {str(target_error)}")
         
-        # 更新任务状态
-        update_task_status(task_id, "completed", 100, result=result)
+        # 构建成功结果
+        success_result = {
+            "success": True,
+            "message": "全平台数据同步完成",
+            "date": reference_date,
+            "execution_mode": "async",
+            "platforms": {
+                "duowei": {
+                    "success": True,
+                    "message": result["message"],
+                    "platform": "duowei",
+                    "data": result["data"],
+                    "date": reference_date
+                }
+            }
+        }
         
-        return {"status": "success", "data": result}
+        # 更新任务状态
+        update_task_status(task_id, "completed", 100, result=success_result)
+        
+        return {"status": "success", "data": success_result}
     except Exception as e:
         logger.error(f"获取多维数据失败: {str(e)}")
         update_task_status(task_id, "failed", 0, error=str(e))
@@ -242,22 +306,43 @@ def fetch_all_data_task(self, task_id: int, date: str = None, user_id: int = Non
         
         # 合并数据
         query_date = date or datetime.now().strftime("%Y-%m-%d")
-        all_data = {
-            "success": meituan_result.get("success", False) or duowei_result.get("success", False),
-            "message": "数据获取部分成功" if (meituan_result.get("success", False) or duowei_result.get("success", False)) else "所有数据源获取失败",
-            "date": query_date,
-            "data": {
-                "meituan": {
-                    "success": meituan_result.get("success", False),
-                    "message": meituan_result.get("message", ""),
-                    "data": meituan_items
-                },
-                "duowei": {
-                    "success": duowei_result.get("success", False),
-                    "message": duowei_result.get("message", ""),
-                    "data": duowei_items
-                }
+        
+        # 构建平台结果
+        platforms_result = {
+            "meituan": {
+                "success": meituan_result.get("success", False),
+                "message": meituan_result.get("message", ""),
+                "platform": "meituan",
+                "data": meituan_items,
+                "date": query_date
+            },
+            "duowei": {
+                "success": duowei_result.get("success", False),
+                "message": duowei_result.get("message", ""),
+                "platform": "duowei",
+                "data": duowei_items,
+                "date": query_date
             }
+        }
+        
+        # 判断整体成功状态
+        all_success = all(platform["success"] for platform in platforms_result.values())
+        any_success = any(platform["success"] for platform in platforms_result.values())
+        
+        # 根据成功状态设置消息
+        if all_success:
+            overall_message = "全平台数据同步完成"
+        elif any_success:
+            overall_message = "部分平台数据同步完成"
+        else:
+            overall_message = "数据同步失败"
+        
+        all_data = {
+            "success": all_success,
+            "message": overall_message,
+            "date": query_date,
+            "execution_mode": "async",
+            "platforms": platforms_result
         }
         
         # 保存数据到数据库

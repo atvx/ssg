@@ -114,23 +114,41 @@ def fetch_data_get(
                     duowei_result = fetch_duowei_data(date_str, db)
                     
                     # 合并结果
+                    platforms_result = {
+                        "meituan": {
+                            "success": meituan_result.get("success", False),
+                            "message": meituan_result.get("message", ""),
+                            "platform": "meituan",
+                            "data": meituan_result.get("data", []),
+                            "date": date_str
+                        },
+                        "duowei": {
+                            "success": duowei_result.get("success", False),
+                            "message": duowei_result.get("message", ""),
+                            "platform": "duowei",
+                            "data": duowei_result.get("data", []),
+                            "date": date_str
+                        }
+                    }
+                    
+                    # 判断整体成功状态
+                    all_success = all(platform["success"] for platform in platforms_result.values())
+                    any_success = any(platform["success"] for platform in platforms_result.values())
+                    
+                    # 根据成功状态设置消息
+                    if all_success:
+                        overall_message = "全平台数据同步完成"
+                    elif any_success:
+                        overall_message = "部分平台数据同步完成"
+                    else:
+                        overall_message = "数据同步失败"
+                    
                     all_data = {
-                        "success": meituan_result.get("success", False) or duowei_result.get("success", False),
-                        "message": "数据获取完成",
+                        "success": all_success,
+                        "message": overall_message,
                         "date": date_str,
                         "execution_mode": "sync",
-                        "platforms": {
-                            "meituan": {
-                                "success": meituan_result.get("success", False),
-                                "message": meituan_result.get("message", ""),
-                                "data": meituan_result.get("data", [])
-                            },
-                            "duowei": {
-                                "success": duowei_result.get("success", False),
-                                "message": duowei_result.get("message", ""),
-                                "data": duowei_result.get("data", [])
-                            }
-                        }
+                        "platforms": platforms_result
                     }
                     
                     # 同步模式下更新月度销售目标
