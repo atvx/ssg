@@ -66,36 +66,35 @@ def get_chromedriver_default_paths():
 
 
 def find_chromedriver():
-    """查找Chrome Driver路径"""
-    system, arch = get_platform_info()
+    """查找ChromeDriver可执行文件路径"""
+    # 获取系统默认路径
+    paths = get_chromedriver_default_paths()
     
-    # 首先检查环境变量
-    env_path = os.environ.get('CHROMEDRIVER_PATH')
-    if env_path and os.path.exists(env_path):
-        return env_path
-    
-    # 检查默认路径
-    for path in get_chromedriver_default_paths():
+    # 检查路径是否存在
+    for path in paths:
         if os.path.exists(path):
+            logger.info(f"找到ChromeDriver: {path}")
             return path
     
-    # 尝试使用系统命令查找
+    # 尝试从PATH环境变量中查找
     try:
+        system, arch = get_platform_info()
         if system == "windows":
-            # Windows下使用where命令
             result = subprocess.run(['where', 'chromedriver'], 
-                                  capture_output=True, text=True, check=False)
+                                  capture_output=True, text=True, encoding='utf-8', errors='ignore', check=False)
+            if result.returncode == 0:
+                path = result.stdout.strip().split('\n')[0]
+                if os.path.exists(path):
+                    return path
         else:
-            # Unix系统使用which命令
             result = subprocess.run(['which', 'chromedriver'], 
-                                  capture_output=True, text=True, check=False)
-        
-        if result.returncode == 0:
-            path = result.stdout.strip()
-            if os.path.exists(path):
-                return path
+                                  capture_output=True, text=True, encoding='utf-8', errors='ignore', check=False)
+            if result.returncode == 0:
+                path = result.stdout.strip()
+                if os.path.exists(path):
+                    return path
     except Exception as e:
-        print(f"查找ChromeDriver出错: {e}")
+        logger.warning(f"从PATH查找ChromeDriver时出错: {e}")
     
     return None
 
@@ -302,7 +301,7 @@ def get_chrome_version():
                 for chrome_path in chrome_paths:
                     if os.path.exists(chrome_path):
                         result = subprocess.run([chrome_path, '--version'], 
-                                              capture_output=True, text=True, check=False)
+                                              capture_output=True, text=True, encoding='utf-8', errors='ignore', check=False)
                         if result.returncode == 0:
                             return result.stdout.strip().split()[-1]
         elif system == "mac":
@@ -310,19 +309,19 @@ def get_chrome_version():
             chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
             if os.path.exists(chrome_path):
                 result = subprocess.run([chrome_path, '--version'], 
-                                      capture_output=True, text=True, check=False)
+                                      capture_output=True, text=True, encoding='utf-8', errors='ignore', check=False)
                 if result.returncode == 0:
                     return result.stdout.strip().split()[-1]
         else:
             # Linux
             result = subprocess.run(['google-chrome', '--version'], 
-                                  capture_output=True, text=True, check=False)
+                                  capture_output=True, text=True, encoding='utf-8', errors='ignore', check=False)
             if result.returncode == 0:
                 return result.stdout.strip().split()[-1]
             
             # 备选命令
             result = subprocess.run(['chromium-browser', '--version'], 
-                                  capture_output=True, text=True, check=False)
+                                  capture_output=True, text=True, encoding='utf-8', errors='ignore', check=False)
             if result.returncode == 0:
                 return result.stdout.strip().split()[-1]
                 

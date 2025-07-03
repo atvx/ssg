@@ -63,11 +63,11 @@ def force_kill_processes(process_names):
             if system == "Windows":
                 # Windows使用taskkill强制终止
                 subprocess.run(f"taskkill /f /im {process_name}.exe", shell=True, 
-                             capture_output=True, text=True)
+                             capture_output=True, text=True, encoding='utf-8', errors='ignore')
             else:
                 # Unix系统使用pkill强制终止
                 subprocess.run(f"pkill -9 -f '{process_name}'", shell=True, 
-                             capture_output=True, text=True)
+                             capture_output=True, text=True, encoding='utf-8', errors='ignore')
         
         time.sleep(1)  # 等待进程完全终止
         logger.debug(f"已强制终止进程: {process_names}")
@@ -88,20 +88,20 @@ def kill_chrome_processes():
         system = platform.system()
         if system == "Windows":
             subprocess.run("taskkill /im chrome.exe /t", shell=True, 
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
             subprocess.run("taskkill /im chromedriver.exe /t", shell=True, 
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
         elif system == "Darwin":
             subprocess.run("pkill -f 'Google Chrome'", shell=True, 
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
             subprocess.run("pkill -f 'chromedriver'", shell=True, 
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
         else:
             # Linux系统
             subprocess.run("pkill -f chrome", shell=True, 
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
             subprocess.run("pkill -f chromedriver", shell=True, 
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
         
         # 等待进程自然终止
         time.sleep(2)

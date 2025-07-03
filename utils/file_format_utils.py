@@ -219,7 +219,7 @@ def convert_xlsx_to_pdf(xlsx_path: Path, output_dir: Path = None) -> Path:
         })
         
         result = subprocess.run(cmd, check=True, env=env, 
-                               capture_output=True, text=True, encoding='utf-8')
+                               capture_output=True, text=True, encoding='utf-8', errors='ignore')
         
         # 生成PDF文件路径
         pdf_path = output_dir / xlsx_path.with_suffix('.pdf').name

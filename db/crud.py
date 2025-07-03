@@ -1,11 +1,12 @@
+import os
 import logging
-from datetime import datetime, date, timezone
-from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
+from sqlalchemy import desc, text, or_, and_, func, update as sql_update, delete as sql_delete
 from sqlalchemy.exc import SQLAlchemyError
-import json
-from sqlalchemy import and_, or_, desc, select, text
+from typing import List, Dict, Any, Optional, Tuple, Union
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+import json
 
 from . import models
 from models.user import User
@@ -868,6 +869,98 @@ def get_daily_sales_data(db: Session, query_date: str) -> List[Dict[str, Any]]:
         logger.error(f"获取日报销售数据失败: {str(e)}")
         raise
 
+def find_daily_sales_data(db: Session, query_date: str) -> List[Dict[str, Any]]:
+    """
+    获取指定日期的销售数据，用于生成日报
+    
+    Args:
+        db: 数据库会话
+        query_date: 查询日期，格式为 YYYY-MM-DD
+        
+    Returns:
+        List[Dict]: 销售数据列表
+    """
+    try:
+        # 构建SQL查询
+        sql_query = text("""
+        SELECT
+            c.id,
+            c.name,
+            c.status,
+            t.car_count,
+            ROUND(d.income_amt, 2) AS daily_revenue,
+            ROUND(d.avg_income_amt, 2) AS daily_avg_revenue_cart,
+            d.sales_cart_count AS daily_cart_count,
+            ROUND(t.target_income, 0) AS target_income,
+            ROUND(mtd.total_income_amt, 2) AS actual_income,
+            ROUND(mtd.ach_rate, 1) AS ach_rate,
+            ROUND(mtd.per_car_income, 2) AS per_car_income,
+            mtd.total_sales_cart_count AS sold_car_count,
+            p.id AS parent_id,
+            p.name AS parent_name,
+            p.sort AS p_sort,
+            c.sort AS c_sort 
+        FROM orgs AS c
+        LEFT JOIN orgs AS p ON p.id = c.parent_id
+        LEFT JOIN sales_records AS d ON d.warehouse_name = c.name AND d.DATE = :query_date
+        LEFT JOIN sales_target AS t ON t.org_name = c.name AND t.year = YEAR (:query_date) AND t.month = MONTH (:query_date)
+        LEFT JOIN (
+            SELECT
+                sr.warehouse_name,
+                SUM(sr.income_amt) AS total_income_amt,
+                SUM(sr.sales_cart_count) AS total_sales_cart_count,
+                ROUND(SUM(sr.income_amt) / NULLIF(SUM(sr.sales_cart_count), 0), 2) AS per_car_income,
+                ROUND(SUM(sr.income_amt) / NULLIF(MAX(st.target_income), 0) * 100, 1) AS ach_rate 
+            FROM
+                sales_records sr
+                LEFT JOIN sales_target st ON st.org_name = sr.warehouse_name 
+                AND st.year = YEAR (:query_date) 
+                AND st.month = MONTH (:query_date) 
+            WHERE
+                sr.date BETWEEN DATE_FORMAT(:query_date, '%Y-%m-01') 
+                AND :query_date 
+            GROUP BY sr.warehouse_name 
+        ) AS mtd ON mtd.warehouse_name = c.name 
+        WHERE c.org_type = 3
+        ORDER BY p.sort, c.sort;
+        """)
+        
+        # 执行查询
+        result = db.execute(sql_query, {'query_date': query_date})
+        
+        # 将结果转换为字典列表
+        columns = result.keys()
+        rows = result.fetchall()
+        
+        # 确保可以正确序列化数据
+        formatted_data = []
+        for row in rows:
+            row_dict = dict(zip(columns, row))
+            
+            # 处理Decimal类型和None值，转换为float或int
+            for key, value in row_dict.items():
+                if isinstance(value, Decimal):
+                    # 如果是整数值，转为int，否则转为float
+                    if value % 1 == 0:
+                        row_dict[key] = int(value)
+                    else:
+                        row_dict[key] = float(value)
+                elif value is None and key in ('daily_revenue', 'daily_avg_revenue_cart', 'daily_cart_count', 
+                                             'target_income', 'actual_income', 'ach_rate', 'per_car_income', 
+                                             'sold_car_count', 'car_count'):
+                    # 将可能为None的数值字段设为0
+                    row_dict[key] = 0
+            
+            formatted_data.append(row_dict)
+        
+        return formatted_data
+        
+    except SQLAlchemyError as e:
+        logger.error(f"获取日报销售数据数据库错误: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"获取日报销售数据失败: {str(e)}")
+        raise
 
 def get_weekly_stats_data(
     db: Session, 
