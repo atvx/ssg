@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from api.endpoints import auth, sales, tasks, orgs, records
+from api.endpoints import auth, sales, tasks, orgs, records, report
 
 api_router = APIRouter()
 
@@ -36,4 +36,11 @@ api_router.include_router(
     records.router,
     prefix="/sales",
     tags=["sales-records"]
+)
+
+# 注册报告相关路由
+api_router.include_router(
+    report.router,
+    prefix="/report",
+    tags=["reports"]
 )

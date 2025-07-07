@@ -2,6 +2,9 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Generic, TypeVar
 from enum import Enum
 
+# 定义泛型类型变量
+T = TypeVar('T')
+
 
 # 状态码枚举
 class StatusCode(int, Enum):
@@ -49,11 +52,11 @@ class ErrorInfo(BaseModel):
 
 
 # 通用响应模型
-class APIResponse(BaseModel):
+class APIResponse(BaseModel, Generic[T]):
     code: int = Field(200, description="HTTP状态码")
     success: bool = Field(True, description="操作是否成功")
     message: str = Field(..., description="响应消息")
-    data: Optional[Any] = Field(None, description="响应数据")
+    data: Optional[T] = Field(None, description="响应数据")
     error: Optional[ErrorInfo] = Field(None, description="错误信息")
     
     model_config = {
