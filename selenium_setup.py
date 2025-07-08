@@ -164,6 +164,9 @@ def setup_selenium_env():
     os.environ["MSEDGEDRIVER_PATH"] = "/usr/local/bin/msedgedriver"
     os.environ["SELENIUM_DRIVER_PATH"] = "/usr/local/bin/msedgedriver"
     os.environ["SELENIUM_BROWSER_BINARY"] = "/usr/bin/microsoft-edge"
+    os.environ["SELENIUM_BROWSER"] = "edge"
+    os.environ["BROWSER_TYPE"] = "edge"
+    os.environ["USE_EDGE"] = "true"
     
     # 设置Edge启动选项
     os.environ["EDGE_OPTIONS"] = "--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"

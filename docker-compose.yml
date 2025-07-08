@@ -35,8 +35,6 @@ services:
       # 添加时间同步
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      # 添加selenium_setup.py
-      - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
     environment:
       - APP_NAME=销售数据获取系统
       - DEBUG=True
@@ -91,16 +89,17 @@ services:
       - UPLOAD_DRIVER=local
       - APP_DOMAIN=http://localhost:3400
       - MEDIA_PREFIX=/images
+      # 添加调试环境变量
+      - SELENIUM_BROWSER=edge
+      - BROWSER_TYPE=edge
+      - USE_EDGE=true
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
     command: >
       bash -c "
-      cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py && 
-      python /tmp/selenium_setup_tmp.py && 
-      rm -f /tmp/selenium_setup_tmp.py && 
-      pip install backoff==2.2.1 urllib3==2.5.0 --root-user-action=ignore && 
+      pip install setuptools==68.2.2 --root-user-action=ignore &&
       python -m uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120 --log-level debug
       "
     networks:
@@ -147,15 +146,20 @@ services:
       # 添加时间同步
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      # 添加selenium_setup.py
-      - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
+    environment:
+      # Edge配置
+      - EDGE_HEADLESS=true
+      - SELENIUM_HEADLESS=true
+      # Edge用户数据目录
+      - EDGE_USER_DATA_DIR=/app/edge_user_data
+      # 添加调试环境变量
+      - SELENIUM_BROWSER=edge
+      - BROWSER_TYPE=edge
+      - USE_EDGE=true
     command: >
       bash -c "
       sleep 60 &&
-      cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py &&
-      python /tmp/selenium_setup_tmp.py &&
-      rm -f /tmp/selenium_setup_tmp.py &&
-      pip install backoff==2.2.1 urllib3==2.5.0 --root-user-action=ignore &&
+      pip install setuptools==68.2.2 --root-user-action=ignore &&
       celery -A celery_app.celery worker
       --loglevel=INFO
       --concurrency=2
