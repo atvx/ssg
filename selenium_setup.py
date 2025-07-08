@@ -21,12 +21,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("selenium_setup")
 
-def ensure_chrome_dirs():
-    """确保Chrome相关目录存在并具有正确权限"""
+def ensure_edge_dirs():
+    """确保Edge相关目录存在并具有正确权限"""
     dirs = [
-        "/app/chrome_user_data",
-        "/tmp/chrome_tmp",
-        "/var/run/chrome"
+        "/app/edge_user_data",
+        "/tmp/edge_tmp",
+        "/var/run/edge"
     ]
     for dir_path in dirs:
         path = Path(dir_path)
@@ -38,53 +38,37 @@ def ensure_chrome_dirs():
         os.chmod(dir_path, 0o777)
         logger.info(f"设置权限: {dir_path}")
 
+
 def check_browser_binaries():
-    """检查浏览器可执行文件是否存在并可执行"""
-    binaries = [
-        ("/usr/bin/google-chrome", "Google Chrome"),
-        ("/usr/local/bin/chromedriver", "ChromeDriver"),
-        ("/usr/bin/firefox-esr", "Firefox ESR"),
-        ("/usr/local/bin/geckodriver", "GeckoDriver")
+    """检查浏览器可执行文件是否存在"""
+    edge_paths = [
+        "/usr/bin/microsoft-edge",
+        "/usr/bin/microsoft-edge-stable",
+        "/usr/bin/microsoft-edge-dev",
+        "/usr/bin/microsoft-edge-beta"
     ]
     
-    for binary_path, name in binaries:
-        if os.path.exists(binary_path):
-            if os.access(binary_path, os.X_OK):
-                # 获取版本信息
-                try:
-                    if "chrome" in binary_path:
-                        version_cmd = [binary_path, "--version"]
-                    elif "firefox" in binary_path:
-                        version_cmd = [binary_path, "--version"]
-                    elif "driver" in binary_path:
-                        version_cmd = [binary_path, "--version"]
-                    
-                    result = subprocess.run(
-                        version_cmd, 
-                        capture_output=True, 
-                        text=True,
-                        timeout=5
-                    )
-                    if result.returncode == 0:
-                        version = result.stdout.strip()
-                        logger.info(f"{name} 可用: {version}")
-                    else:
-                        logger.warning(f"{name} 可执行但无法获取版本")
-                except Exception as e:
-                    logger.warning(f"无法获取 {name} 版本: {str(e)}")
-            else:
-                logger.warning(f"{name} 存在但不可执行: {binary_path}")
-                try:
-                    os.chmod(binary_path, 0o755)
-                    logger.info(f"已修复 {name} 权限")
-                except Exception as e:
-                    logger.error(f"无法修复 {name} 权限: {str(e)}")
-        else:
-            logger.error(f"{name} 不存在: {binary_path}")
+    edge_found = False
+    for path in edge_paths:
+        if os.path.exists(path):
+            logger.info(f"找到Edge浏览器: {path}")
+            edge_found = True
+            break
+    
+    if not edge_found:
+        logger.warning("未找到Edge浏览器，可能需要安装")
+    
+    # 检查EdgeDriver
+    edgedriver_path = "/usr/local/bin/msedgedriver"
+    if os.path.exists(edgedriver_path):
+        logger.info(f"找到EdgeDriver: {edgedriver_path}")
+    else:
+        logger.warning("未找到EdgeDriver，可能需要安装")
 
-def setup_chrome_preferences():
-    """设置Chrome首选项以优化性能和内存使用"""
-    user_data_dir = "/app/chrome_user_data"
+
+def setup_edge_preferences():
+    """设置Edge首选项以优化性能和内存使用"""
+    user_data_dir = "/app/edge_user_data"
     default_dir = os.path.join(user_data_dir, "Default")
     
     # 确保目录存在
@@ -170,19 +154,19 @@ def setup_chrome_preferences():
     with open(prefs_file, 'w', encoding='utf-8') as f:
         json.dump(prefs, f, indent=4)
     
-    logger.info(f"已创建Chrome首选项文件: {prefs_file}")
+    logger.info(f"已创建Edge首选项文件: {prefs_file}")
 
 def setup_selenium_env():
     """设置Selenium环境变量"""
-    # 设置Chrome和WebDriver环境变量
-    os.environ["CHROME_BIN"] = "/usr/bin/google-chrome"
-    os.environ["CHROMIUM_PATH"] = "/usr/bin/google-chrome"
-    os.environ["CHROMEDRIVER_PATH"] = "/usr/local/bin/chromedriver"
-    os.environ["SELENIUM_DRIVER_PATH"] = "/usr/local/bin/chromedriver"
-    os.environ["SELENIUM_BROWSER_BINARY"] = "/usr/bin/google-chrome"
+    # 设置Edge和WebDriver环境变量
+    os.environ["EDGE_BIN"] = "/usr/bin/microsoft-edge"
+    os.environ["EDGE_PATH"] = "/usr/bin/microsoft-edge"
+    os.environ["MSEDGEDRIVER_PATH"] = "/usr/local/bin/msedgedriver"
+    os.environ["SELENIUM_DRIVER_PATH"] = "/usr/local/bin/msedgedriver"
+    os.environ["SELENIUM_BROWSER_BINARY"] = "/usr/bin/microsoft-edge"
     
-    # 设置Chrome启动选项
-    os.environ["CHROME_OPTIONS"] = "--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"
+    # 设置Edge启动选项
+    os.environ["EDGE_OPTIONS"] = "--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"
     
     logger.info("已设置Selenium环境变量")
 
@@ -190,14 +174,14 @@ def main():
     """主函数"""
     logger.info("启动Selenium环境设置...")
     
-    # 确保Chrome目录存在
-    ensure_chrome_dirs()
+    # 确保Edge目录存在
+    ensure_edge_dirs()
     
     # 检查浏览器可执行文件
     check_browser_binaries()
     
-    # 设置Chrome首选项
-    setup_chrome_preferences()
+    # 设置Edge首选项
+    setup_edge_preferences()
     
     # 设置Selenium环境变量
     setup_selenium_env()

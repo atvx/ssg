@@ -101,9 +101,11 @@ venv.bak/
 # mkdocs documentation
 /site
 
-# ChromeDriver
+# Browser Data
 chrome_user_data/
+edge_user_data/
 cookies_meituan.json
+msedgedriver*
 
 # mypy
 .mypy_cache/

@@ -101,11 +101,11 @@ def test_browser_initialization():
     }
     
     try:
-        print("正在初始化Chrome浏览器...")
+        print("正在初始化Edge浏览器...")
         driver = init_chrome_driver(config)
         
         if driver:
-            print("✅ Chrome浏览器启动成功")
+            print("✅ Edge浏览器启动成功")
             
             # 简单页面加载测试
             try:
@@ -116,9 +116,9 @@ def test_browser_initialization():
                 # 获取浏览器信息
                 try:
                     browser_version = driver.capabilities.get('browserVersion', 'Unknown')
-                    chrome_version = driver.capabilities.get('chrome', {}).get('chromedriverVersion', 'Unknown')
+                    edge_version = driver.capabilities.get('msedge', {}).get('msedgedriverVersion', 'Unknown')
                     print(f"✅ 浏览器版本: {browser_version}")
-                    print(f"✅ ChromeDriver版本: {chrome_version}")
+                    print(f"✅ EdgeDriver版本: {edge_version}")
                 except:
                     print("⚠️ 无法获取版本信息")
                 
@@ -136,10 +136,8 @@ def test_browser_initialization():
         else:
             print("❌ 浏览器启动失败")
             return False
-            
     except Exception as e:
         print(f"❌ 浏览器初始化失败: {e}")
-        print("请参考 BROWSER_SETUP.md 进行手动配置")
         return False
 
 

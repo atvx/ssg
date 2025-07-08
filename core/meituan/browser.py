@@ -1,6 +1,8 @@
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.edge.options import Options as EdgeOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.edge.service import Service as EdgeService
 from seleniumwire import webdriver as wire_webdriver
 import os
 import time
@@ -354,39 +356,40 @@ def get_temp_dir():
 
 
 def init_chrome_driver(config, force_new_session=False):
-    """初始化Chrome浏览器
+    """初始化Edge浏览器
     
     Args:
         config: 配置字典
         force_new_session (bool): 如果为True，不使用现有的用户数据目录
     """
-    # 检查是否需要清理Chrome进程（仅清理进程，不清理用户数据）
+    # 检查是否需要清理Edge进程（仅清理进程，不清理用户数据）
     try:
-        # 使用优化的Chrome清理工具，但只清理进程
-        cleaner = ChromeCleanup()
+        # 使用优化的Edge清理工具，但只清理进程
+        from utils.chrome_cleanup import EdgeCleanup
+        cleaner = EdgeCleanup()
         
-        # 如果Chrome仍在运行，等待其退出
-        if cleaner.is_chrome_running():
-            logger.info("检测到Chrome进程正在运行，等待退出...")
-            cleaner.wait_for_chrome_exit(timeout=3)
+        # 如果Edge仍在运行，等待其退出
+        if cleaner.is_browser_running():
+            logger.info("检测到Edge进程正在运行，等待退出...")
+            cleaner.wait_for_browser_exit(timeout=3)
         
-        # 只清理Chrome进程，不清理用户数据
-        force_kill_processes(['chrome', 'chromedriver', 'Google Chrome'])
+        # 只清理Edge进程，不清理用户数据
+        force_kill_processes(['msedge', 'msedgedriver', 'Microsoft Edge'])
         
         # 等待确保清理完成
         time.sleep(1)
     except Exception as e:
-        logger.warning(f"Chrome进程清理时出现非关键错误: {e}")
+        logger.warning(f"Edge进程清理时出现非关键错误: {e}")
 
     # 多次尝试启动浏览器
     max_attempts = 3
     for attempt in range(max_attempts):
         try:
-            chrome_options = Options()
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--window-size=1280,800")
+            edge_options = EdgeOptions()
+            edge_options.add_argument("--no-sandbox")
+            edge_options.add_argument("--disable-dev-shm-usage")
+            edge_options.add_argument("--disable-gpu")
+            edge_options.add_argument("--window-size=1280,800")
             
             # 确定用户数据目录
             user_data_dir = None
@@ -408,70 +411,66 @@ def init_chrome_driver(config, force_new_session=False):
                     logger.warning(f"配置的用户数据目录不可用，使用临时目录: {user_data_dir}")
             
             # 设置用户数据目录
-            chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+            edge_options.add_argument(f"--user-data-dir={user_data_dir}")
             
             # 添加以下代码，处理无头模式
             if config.get("HEADLESS", False):
-                logger.info("启用无头模式运行Chrome")
-                chrome_options.add_argument("--headless=new")  # 使用新的headless模式
+                logger.info("启用无头模式运行Edge")
+                edge_options.add_argument("--headless=new")  # 使用新的headless模式
                 # 添加解决DevToolsActivePort问题的参数
-                chrome_options.add_argument("--remote-debugging-port=9222")
-                chrome_options.add_argument("--disable-dev-shm-usage")
-                chrome_options.add_argument("--no-sandbox")
+                edge_options.add_argument("--remote-debugging-port=9222")
+                edge_options.add_argument("--disable-dev-shm-usage")
+                edge_options.add_argument("--no-sandbox")
                 
                 # 禁用可能导致问题的功能
-                chrome_options.add_argument("--disable-extensions")
-                chrome_options.add_argument("--disable-dev-tools")
-                chrome_options.add_argument("--disable-infobars")
-                chrome_options.add_argument("--disable-notifications")
-                chrome_options.add_argument("--disable-popup-blocking")
-                chrome_options.add_argument("--disable-save-password-bubble")
-                chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-                chrome_options.add_argument("--disable-site-isolation-trials")
-                chrome_options.add_argument("--disable-backgrounding-occluded-windows")
-                chrome_options.add_argument("--disable-breakpad")
-                chrome_options.add_argument("--disable-client-side-phishing-detection")
-                chrome_options.add_argument("--disable-hang-monitor")
-                chrome_options.add_argument("--disable-prompt-on-repost")
-                chrome_options.add_argument("--ignore-certificate-errors")
+                edge_options.add_argument("--disable-extensions")
+                edge_options.add_argument("--disable-dev-tools")
+                edge_options.add_argument("--disable-infobars")
+                edge_options.add_argument("--disable-notifications")
+                edge_options.add_argument("--disable-popup-blocking")
+                edge_options.add_argument("--disable-save-password-bubble")
+                edge_options.add_argument("--disable-features=VizDisplayCompositor")
+                edge_options.add_argument("--disable-site-isolation-trials")
+                edge_options.add_argument("--disable-backgrounding-occluded-windows")
+                edge_options.add_argument("--disable-breakpad")
+                edge_options.add_argument("--disable-client-side-phishing-detection")
+                edge_options.add_argument("--disable-hang-monitor")
+                edge_options.add_argument("--disable-prompt-on-repost")
+                edge_options.add_argument("--ignore-certificate-errors")
                 
                 # 内存相关优化
-                chrome_options.add_argument("--js-flags=--max-old-space-size=2048")
-                chrome_options.add_argument("--memory-pressure-off")
-                chrome_options.add_argument("--disable-crash-reporter")
-                chrome_options.add_argument("--disable-in-process-stack-traces")
+                edge_options.add_argument("--js-flags=--max-old-space-size=2048")
+                edge_options.add_argument("--memory-pressure-off")
+                edge_options.add_argument("--disable-crash-reporter")
+                edge_options.add_argument("--disable-in-process-stack-traces")
                 
                 # 加载策略调整
-                chrome_options.page_load_strategy = 'eager'
+                edge_options.page_load_strategy = 'eager'
             
             # 设置通用的用户代理和反检测
-            chrome_options.add_argument(
+            edge_options.add_argument(
                 "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option("useAutomationExtension", False)
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            edge_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            edge_options.add_experimental_option("useAutomationExtension", False)
+            edge_options.add_argument("--disable-blink-features=AutomationControlled")
             
             # 减少日志输出
-            chrome_options.add_argument("--log-level=3")
-            chrome_options.add_argument("--silent")
-            chrome_options.add_argument("--disable-logging")
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation', 'enable-logging'])
+            edge_options.add_argument("--log-level=3")
+            edge_options.add_argument("--silent")
+            edge_options.add_argument("--disable-logging")
+            edge_options.add_experimental_option('excludeSwitches', ['enable-automation', 'enable-logging'])
             
-            # 查找ChromeDriver路径
-            chromedriver_path = find_chromedriver()
-            if not chromedriver_path:
-                logger.info("未找到ChromeDriver，尝试自动下载...")
-                chromedriver_path = download_chromedriver()
-                
-            if not chromedriver_path:
-                logger.error("无法找到或下载ChromeDriver，请手动安装")
-                raise Exception("ChromeDriver未找到")
+            # 查找EdgeDriver路径
+            edgedriver_path = find_edgedriver()
+            if not edgedriver_path:
+                logger.error("无法找到EdgeDriver，请手动安装")
+                raise Exception("EdgeDriver未找到")
             
-            logger.info(f"使用ChromeDriver: {chromedriver_path}")
+            logger.info(f"使用EdgeDriver: {edgedriver_path}")
             
             # 设置服务超时参数
-            service = Service(
-                executable_path=chromedriver_path,
+            service = EdgeService(
+                executable_path=edgedriver_path,
                 log_path=os.devnull
             )
             
@@ -481,28 +480,19 @@ def init_chrome_driver(config, force_new_session=False):
             time.sleep(2)
             
             if monitor_api:
-                # 优化selenium-wire配置
-                seleniumwire_options = {
-                    'disable_encoding': True,  # 禁用内容编码，以便能够读取响应体
-                    'suppress_connection_errors': True,  # 抑制连接错误
-                    'verify_ssl': False,  # 不验证SSL证书，避免某些HTTPS请求问题
-                    'request_storage': 'memory',  # 使用内存存储请求，提高性能
-                    'request_storage_max_size': 50,  # 降低存储的请求数量以节省内存
-                    'connection_timeout': 60,  # 降低连接超时时间
-                    'connection_keep_alive': True,  # 保持连接
-                    'max_retries': 3  # 最大重试次数
-                }
+                # 使用全局配置的selenium-wire选项
+                seleniumwire_options = settings.SELENIUM_WIRE_OPTIONS.copy()
                 
                 # 设置请求过滤范围
                 scopes = config.get("MONITOR_SCOPES", [r'.*pos\.meituan\.com.*'])
                 
-                logger.info(f"使用ChromeDriver: {chromedriver_path}")
+                logger.info(f"使用EdgeDriver: {edgedriver_path}")
                 
                 # 创建driver
-                logger.info("尝试启动Chrome浏览器...")
-                driver = wire_webdriver.Chrome(
+                logger.info("尝试启动Edge浏览器...")
+                driver = wire_webdriver.Edge(
                     service=service,
-                    options=chrome_options, 
+                    options=edge_options, 
                     seleniumwire_options=seleniumwire_options
                 )
                 
@@ -516,8 +506,8 @@ def init_chrome_driver(config, force_new_session=False):
                 logger.info(f"已启用API监控，监控范围: {scopes}")
             else:
                 # 使用标准webdriver
-                logger.info("尝试启动Chrome浏览器...")
-                driver = webdriver.Chrome(service=service, options=chrome_options)
+                logger.info("尝试启动Edge浏览器...")
+                driver = webdriver.Edge(service=service, options=edge_options)
                 
                 # 降低超时时间
                 driver.set_script_timeout(20)
@@ -526,9 +516,9 @@ def init_chrome_driver(config, force_new_session=False):
             # 显示版本信息
             try:
                 browser_version = driver.capabilities['browserVersion']
-                driver_version = driver.capabilities['chrome']['chromedriverVersion'].split(' ')[0]
-                logger.info(f"Chrome浏览器版本: {browser_version}")
-                logger.info(f"ChromeDriver版本: {driver_version}")
+                driver_version = driver.capabilities.get('msedge', {}).get('msedgedriverVersion', 'Unknown').split(' ')[0]
+                logger.info(f"Edge浏览器版本: {browser_version}")
+                logger.info(f"EdgeDriver版本: {driver_version}")
             except Exception as e:
                 logger.warning(f"获取浏览器版本信息失败: {e}")
             
@@ -551,7 +541,7 @@ def init_chrome_driver(config, force_new_session=False):
             except Exception as e:
                 logger.warning(f"设置反检测脚本时出错: {e}")
             
-            logger.info("Chrome浏览器已成功启动")
+            logger.info("Edge浏览器已成功启动")
             return driver
             
         except Exception as e:
@@ -560,10 +550,73 @@ def init_chrome_driver(config, force_new_session=False):
             
             if attempt < max_attempts - 1:
                 logger.info("正在清理并重试...")
-                force_kill_processes(['chrome', 'chromedriver', 'Google Chrome'])
+                force_kill_processes(['msedge', 'msedgedriver', 'Microsoft Edge'])
                 time.sleep(5)  # 等待更长时间
             else:
                 raise Exception(f"多次尝试后仍无法启动浏览器: {e}")
     
     # 如果所有尝试都失败
-    raise Exception("无法启动Chrome浏览器，已达到最大尝试次数") 
+    raise Exception("无法启动Edge浏览器，已达到最大尝试次数") 
+
+
+def get_edge_default_paths():
+    """获取不同平台下Edge Driver的默认路径"""
+    system, arch = get_platform_info()
+    
+    if system == "windows":
+        return [
+            os.path.join(os.environ.get('PROGRAMFILES', ''), 'Microsoft', 'Edge', 'Application', 'msedgedriver.exe'),
+            os.path.join(os.environ.get('PROGRAMFILES(X86)', ''), 'Microsoft', 'Edge', 'Application', 'msedgedriver.exe'),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Microsoft', 'Edge', 'Application', 'msedgedriver.exe'),
+            'msedgedriver.exe',
+            './msedgedriver.exe'
+        ]
+    elif system == "mac":
+        return [
+            '/usr/local/bin/msedgedriver',
+            '/opt/homebrew/bin/msedgedriver',  # Apple Silicon Mac
+            '/usr/bin/msedgedriver',
+            './msedgedriver',
+            os.path.expanduser('~/bin/msedgedriver')
+        ]
+    else:  # Linux
+        return [
+            '/usr/local/bin/msedgedriver',
+            '/usr/bin/msedgedriver',
+            './msedgedriver',
+            os.path.expanduser('~/bin/msedgedriver')
+        ]
+
+
+def find_edgedriver():
+    """查找EdgeDriver可执行文件路径"""
+    # 获取系统默认路径
+    paths = get_edge_default_paths()
+    
+    # 检查路径是否存在
+    for path in paths:
+        if os.path.exists(path):
+            logger.info(f"找到EdgeDriver: {path}")
+            return path
+    
+    # 尝试从PATH环境变量中查找
+    try:
+        system, arch = get_platform_info()
+        if system == "windows":
+            result = subprocess.run(['where', 'msedgedriver'], 
+                                  capture_output=True, text=True, encoding='utf-8', errors='ignore', check=False)
+            if result.returncode == 0:
+                path = result.stdout.strip().split('\n')[0]
+                if os.path.exists(path):
+                    return path
+        else:
+            result = subprocess.run(['which', 'msedgedriver'], 
+                                  capture_output=True, text=True, encoding='utf-8', errors='ignore', check=False)
+            if result.returncode == 0:
+                path = result.stdout.strip()
+                if os.path.exists(path):
+                    return path
+    except Exception as e:
+        logger.warning(f"从PATH查找EdgeDriver时出错: {e}")
+    
+    return None 

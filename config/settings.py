@@ -79,9 +79,22 @@ class Settings(BaseSettings):
     }
     
     # 浏览器配置
-    CHROME_USER_DATA_DIR: str = "chrome_user_data"
-    # 修改HEADLESS配置读取逻辑，确保能正确读取环境变量
-    HEADLESS: bool = str(os.getenv("HEADLESS", "False")).lower() in ("true", "1", "yes", "y", "t")
+    HEADLESS: bool = os.getenv("HEADLESS", "True").lower() in ("true", "1", "t")
+    CHROME_USER_DATA_DIR: str = os.getenv("CHROME_USER_DATA_DIR", os.path.join(base_dir, "edge_user_data"))
+    EDGE_USER_DATA_DIR: str = os.getenv("EDGE_USER_DATA_DIR", os.path.join(base_dir, "edge_user_data"))
+
+    # Selenium-Wire配置
+    SELENIUM_WIRE_OPTIONS: Dict[str, Any] = {
+        'disable_encoding': True,  # 禁用内容编码，以便能够读取响应体
+        'suppress_connection_errors': True,  # 抑制连接错误
+        'verify_ssl': False,  # 不验证SSL证书，避免某些HTTPS请求问题
+        'request_storage': 'memory',  # 使用内存存储请求，提高性能
+        'request_storage_max_size': 50,  # 降低存储的请求数量以节省内存
+        'connection_timeout': 60,  # 连接超时时间
+        'connection_keep_alive': True,  # 保持连接
+        'max_retries': 3,  # 最大重试次数
+        'http2': False  # 禁用HTTP/2协议，避免StreamClosedError错误
+    }
 
     # 网络超时配置
     NETWORK_TIMEOUT: int = int(os.getenv("NETWORK_TIMEOUT", "60"))  # 默认60秒
@@ -113,3 +126,4 @@ ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 UPLOAD_DRIVER = settings.UPLOAD_DRIVER
 APP_DOMAIN = settings.APP_DOMAIN
 MEDIA_PREFIX = settings.MEDIA_PREFIX
+SELENIUM_WIRE_OPTIONS = settings.SELENIUM_WIRE_OPTIONS

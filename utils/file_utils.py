@@ -51,83 +51,64 @@ def safe_remove_file(file_path):
     return False
 
 def force_kill_processes(process_names):
-    """强制终止指定名称的进程
+    """强制终止指定的进程
     
     Args:
         process_names: 进程名称列表
     """
+    import platform
+    import subprocess
+    import logging
+    import time
+    
+    logger = logging.getLogger(__name__)
+    system = platform.system()
+    
     try:
-        system = platform.system()
+        if system == "Windows":
+            # Windows系统
+            for name in process_names:
+                try:
+                    subprocess.run(['taskkill', '/F', '/IM', f"{name}.exe"], 
+                                  stdout=subprocess.DEVNULL, 
+                                  stderr=subprocess.DEVNULL,
+                                  check=False)
+                except Exception as e:
+                    logger.debug(f"终止Windows进程 {name} 时出错: {e}")
         
-        for process_name in process_names:
-            if system == "Windows":
-                # Windows使用taskkill强制终止
-                subprocess.run(f"taskkill /f /im {process_name}.exe", shell=True, 
-                             capture_output=True, text=True, encoding='utf-8', errors='ignore')
-            else:
-                # Unix系统使用pkill强制终止
-                subprocess.run(f"pkill -9 -f '{process_name}'", shell=True, 
-                             capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        elif system == "Darwin" or system == "Linux":
+            # macOS或Linux系统
+            for name in process_names:
+                try:
+                    # 使用pkill终止进程
+                    subprocess.run(['pkill', '-f', name], 
+                                  stdout=subprocess.DEVNULL, 
+                                  stderr=subprocess.DEVNULL,
+                                  check=False)
+                    
+                    # 使用killall作为备份方案
+                    subprocess.run(['killall', '-9', name], 
+                                  stdout=subprocess.DEVNULL, 
+                                  stderr=subprocess.DEVNULL,
+                                  check=False)
+                except Exception as e:
+                    logger.debug(f"终止Unix进程 {name} 时出错: {e}")
         
-        time.sleep(1)  # 等待进程完全终止
-        logger.debug(f"已强制终止进程: {process_names}")
+        # 等待进程完全终止
+        time.sleep(1)
         
     except Exception as e:
-        logger.debug(f"强制终止进程时出错: {e}")
+        logger.error(f"终止进程时出错: {e}")
+        # 继续执行，不抛出异常
 
 def kill_chrome_processes():
-    """根据操作系统类型终止Chrome进程"""
-    try:
-        logger.info("开始清理Chrome进程...")
-        
-        # 使用新的Chrome清理工具，但只清理进程，不清理用户数据
-        from utils.chrome_cleanup import ChromeCleanup
-        cleaner = ChromeCleanup()
-        
-        # 第一阶段：温和的进程终止
-        system = platform.system()
-        if system == "Windows":
-            subprocess.run("taskkill /im chrome.exe /t", shell=True, 
-                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
-            subprocess.run("taskkill /im chromedriver.exe /t", shell=True, 
-                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
-        elif system == "Darwin":
-            subprocess.run("pkill -f 'Google Chrome'", shell=True, 
-                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
-            subprocess.run("pkill -f 'chromedriver'", shell=True, 
-                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
-        else:
-            # Linux系统
-            subprocess.run("pkill -f chrome", shell=True, 
-                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
-            subprocess.run("pkill -f chromedriver", shell=True, 
-                         capture_output=True, text=True, encoding='utf-8', errors='ignore')
-        
-        # 等待进程自然终止
-        time.sleep(2)
-        
-        # 第二阶段：强制终止仍在运行的进程
-        force_kill_processes(['chrome', 'chromedriver', 'Google Chrome'])
-        
-        # 等待Chrome完全退出
-        cleaner.wait_for_chrome_exit(timeout=5)
-        
-        # 第三阶段：只清理锁文件，保留登录状态
-        try:
-            # 只清理用户数据目录的锁文件，不删除登录状态
-            cleaner.cleanup_user_data_directories()
-            # 完全清理临时目录
-            cleaner.cleanup_temp_files()
-        except Exception as e:
-            logger.debug(f"Chrome文件清理时出现非关键错误: {e}")
-        
-        logger.info("Chrome进程清理完成，已保留登录状态")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Chrome进程清理失败: {e}")
-        return False
+    """终止所有Chrome进程"""
+    force_kill_processes(['chrome', 'chromedriver', 'Google Chrome'])
 
+
+def kill_edge_processes():
+    """终止所有Edge进程"""
+    force_kill_processes(['msedge', 'msedgedriver', 'Microsoft Edge'])
 
 
 def save_cookies(driver, filename):

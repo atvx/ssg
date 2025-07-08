@@ -71,20 +71,31 @@ ENV LANG=zh_CN.UTF-8 \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8
 
-# 下载和安装Chrome和ChromeDriver - 合并多个步骤减少层数
-RUN wget -q -O /tmp/chrome-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/linux64/chrome-linux64.zip" \
-    && wget -q -O /tmp/chromedriver-linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/linux64/chromedriver-linux64.zip" \
-    && unzip /tmp/chrome-linux64.zip -d /opt/ \
-    && unzip /tmp/chromedriver-linux64.zip -d /opt/ \
-    && rm /tmp/chrome-linux64.zip /tmp/chromedriver-linux64.zip \
-    && chmod +x /opt/chrome-linux64/chrome \
-    && chmod +x /opt/chromedriver-linux64/chromedriver \
-    # 创建软链接与目录 - 合并到同一层
-    && ln -sf /opt/chrome-linux64/chrome /usr/bin/google-chrome \
-    && ln -sf /opt/chrome-linux64/chrome /usr/bin/google-chrome-stable \
-    && ln -sf /opt/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
-    && mkdir -p /var/run/chrome /tmp/chrome_tmp \
-    && chmod -R 777 /var/run/chrome /tmp/chrome_tmp
+# 安装Microsoft Edge和EdgeDriver
+RUN apt-get update && apt-get install -y \
+    curl \
+    apt-transport-https \
+    gnupg \
+    && curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg \
+    && install -o root -g root -m 644 microsoft.gpg /etc/apt/trusted.gpg.d/ \
+    && echo "deb [arch=amd64] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list \
+    && apt-get update \
+    && apt-get install -y microsoft-edge-stable \
+    && EDGE_VERSION=$(microsoft-edge --version | grep -oP '(?<=Microsoft Edge )[0-9]+') \
+    && LATEST_DRIVER=$(curl -s "https://msedgedriver.azureedge.net/LATEST_RELEASE_${EDGE_VERSION}") \
+    && curl -Lo /tmp/msedgedriver.zip "https://msedgedriver.azureedge.net/${LATEST_DRIVER}/edgedriver_linux64.zip" \
+    && unzip /tmp/msedgedriver.zip -d /tmp/ \
+    && mv /tmp/msedgedriver /usr/local/bin/msedgedriver \
+    && chmod +x /usr/local/bin/msedgedriver \
+    && rm -rf /tmp/msedgedriver.zip
+
+# 设置环境变量
+ENV EDGE_BIN=/usr/bin/microsoft-edge \
+    EDGE_PATH=/usr/bin/microsoft-edge \
+    MSEDGEDRIVER_PATH=/usr/local/bin/msedgedriver \
+    SELENIUM_DRIVER_PATH="/usr/local/bin/msedgedriver" \
+    SELENIUM_BROWSER_BINARY="/usr/bin/microsoft-edge" \
+    EDGE_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars"
 
 # 下载和安装geckodriver - 与Firefox相关设置合并
 RUN GECKODRIVER_VERSION="v0.33.0" \
