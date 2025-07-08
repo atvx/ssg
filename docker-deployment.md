@@ -104,24 +104,17 @@ docker-compose logs -f celery_worker
 
 ### 5. 注意事项
 
-#### Chrome浏览器和ChromeDriver
+#### Microsoft Edge浏览器和EdgeDriver
 
-本Dockerfile会自动安装ARM64架构的Chrome浏览器和对应版本的ChromeDriver。如需特定版本，可修改Dockerfile：
-
-```dockerfile
-# 指定Chrome版本
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    google-chrome-stable=136.0.7103.113-1 \
-    ...
-```
+本Dockerfile会自动安装ARM64架构的Microsoft Edge浏览器和对应版本的EdgeDriver。系统会自动下载与安装的Edge浏览器版本匹配的EdgeDriver。
 
 #### 数据持久化
 
-配置文件中已设置将`chrome_user_data`目录挂载到容器中，确保浏览器会话数据能够持久化：
+配置文件中已设置将`edge_user_data`目录挂载到容器中，确保浏览器会话数据能够持久化：
 
 ```yaml
 volumes:
-  - ./chrome_user_data:/app/chrome_user_data
+  - ./edge_user_data:/app/edge_user_data
 ```
 
 #### 网络配置
@@ -167,7 +160,7 @@ docker-compose exec celery_worker bash
    - 查看容器日志
 
 3. **数据获取失败**
-   - 检查Chrome和ChromeDriver是否正确安装
+   - 检查Edge和EdgeDriver是否正确安装
    - 确认网络连接正常
    - 检查目标网站登录凭证是否有效
 

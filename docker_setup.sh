@@ -64,6 +64,8 @@ DUOWEI_SAVE_TO_FILE=False
 
 # 浏览器配置
 HEADLESS=True
+# Edge用户数据目录
+EDGE_USER_DATA_DIR=edge_user_data
 EOF
     
     echo "已创建.env文件，请修改其中的数据库和Redis连接信息。"
@@ -92,17 +94,24 @@ else
         echo "CELERY_BROKER_POOL_LIMIT=10" >> .env
         echo "CELERY_VISIBILITY_TIMEOUT=43200" >> .env
     fi
+    
+    # 添加Edge用户数据目录配置
+    if ! grep -q "EDGE_USER_DATA_DIR" .env; then
+        echo "" >> .env
+        echo "# Edge用户数据目录" >> .env
+        echo "EDGE_USER_DATA_DIR=edge_user_data" >> .env
+    fi
 fi
 
-# 确保chrome_user_data目录存在
-echo "=== 2. 创建Chrome用户数据目录 ==="
-mkdir -p chrome_user_data
-chmod 777 chrome_user_data
+# 确保edge_user_data目录存在
+echo "=== 2. 创建Edge用户数据目录 ==="
+mkdir -p edge_user_data
+chmod 777 edge_user_data
 
-# 创建Chrome临时目录
-echo "=== 3. 创建Chrome临时文件目录 ==="
-mkdir -p /tmp/chrome_tmp
-chmod 777 /tmp/chrome_tmp
+# 创建Edge临时目录
+echo "=== 3. 创建Edge临时文件目录 ==="
+mkdir -p /tmp/edge_tmp
+chmod 777 /tmp/edge_tmp
 
 # 创建时间同步脚本
 echo "=== 4. 创建时间同步脚本 ==="

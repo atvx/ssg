@@ -30,7 +30,7 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecure
     procps \
     net-tools \
     netcat-openbsd \
-    # 精简Chrome依赖，仅保留关键组件
+    # Edge浏览器依赖
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -42,8 +42,6 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecure
     libxfixes3 \
     libgbm1 \
     libpango-1.0-0 \
-    # 仅保留Firefox作为备选浏览器
-    firefox-esr \
     # 新增：日报导出功能依赖
     libreoffice \
     poppler-utils \
@@ -89,31 +87,13 @@ RUN apt-get update && apt-get install -y \
     && chmod +x /usr/local/bin/msedgedriver \
     && rm -rf /tmp/msedgedriver.zip
 
-# 设置环境变量
+# 设置Edge浏览器环境变量
 ENV EDGE_BIN=/usr/bin/microsoft-edge \
     EDGE_PATH=/usr/bin/microsoft-edge \
     MSEDGEDRIVER_PATH=/usr/local/bin/msedgedriver \
     SELENIUM_DRIVER_PATH="/usr/local/bin/msedgedriver" \
     SELENIUM_BROWSER_BINARY="/usr/bin/microsoft-edge" \
-    EDGE_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars"
-
-# 下载和安装geckodriver - 与Firefox相关设置合并
-RUN GECKODRIVER_VERSION="v0.33.0" \
-    && wget -q -O /tmp/geckodriver.tar.gz "https://github.com/mozilla/geckodriver/releases/download/${GECKODRIVER_VERSION}/geckodriver-${GECKODRIVER_VERSION}-linux64.tar.gz" \
-    && tar -xzf /tmp/geckodriver.tar.gz -C /usr/local/bin/ \
-    && rm /tmp/geckodriver.tar.gz \
-    && chmod +x /usr/local/bin/geckodriver
-
-# 设置Chrome/Chromium环境变量
-ENV CHROME_BIN=/usr/bin/google-chrome \
-    CHROMIUM_PATH=/usr/bin/google-chrome \
-    CHROMEDRIVER_PATH=/usr/local/bin/chromedriver \
-    GECKODRIVER_PATH=/usr/local/bin/geckodriver \
-    FIREFOX_BIN=/usr/bin/firefox-esr \
-    PATH="/usr/local/bin:/usr/bin:${PATH}" \
-    SELENIUM_DRIVER_PATH="/usr/local/bin/chromedriver" \
-    SELENIUM_BROWSER_BINARY="/usr/bin/google-chrome" \
-    CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars" \
+    EDGE_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars" \
     # 新增：日报导出相关环境变量
     LIBREOFFICE_PATH=/usr/bin/libreoffice \
     POPPLER_PATH=/usr/bin
@@ -133,7 +113,7 @@ COPY requirements.txt .
 
 # 安装Python依赖 - 使用no-cache-dir减少构建空间需求
 RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt \
-    && pip install --no-cache-dir --root-user-action=ignore selenium-wire webdriver-manager pyvirtualdisplay retry timeout-decorator requests-toolbelt tenacity
+    && pip install --no-cache-dir --root-user-action=ignore selenium-wire pyvirtualdisplay retry timeout-decorator requests-toolbelt tenacity
 
 # 复制Selenium和Redis设置脚本
 COPY selenium_setup.py /usr/local/bin/selenium_setup.py
@@ -151,12 +131,12 @@ fc-cache -f -v\n\
 \n\
 # 启动虚拟显示服务器\n\
 Xvfb :99 -screen 0 1920x1080x24 -ac &\n\
-# 确保chrome_user_data目录存在并有正确权限\n\
-mkdir -p /app/chrome_user_data\n\
-chmod -R 777 /app/chrome_user_data\n\
+# 确保edge_user_data目录存在并有正确权限\n\
+mkdir -p /app/edge_user_data\n\
+chmod -R 777 /app/edge_user_data\n\
 # 确保临时目录存在并有正确权限\n\
-mkdir -p /tmp/chrome_tmp\n\
-chmod -R 777 /tmp/chrome_tmp\n\
+mkdir -p /tmp/edge_tmp\n\
+chmod -R 777 /tmp/edge_tmp\n\
 # 新增：确保日报导出数据目录存在并有正确权限\n\
 mkdir -p /app/data\n\
 chmod -R 777 /app/data\n\
@@ -166,7 +146,7 @@ python /usr/local/bin/selenium_setup.py\n\
 python /usr/local/bin/redis_setup.py\n\
 # 设置环境变量\n\
 export PYTHONPATH=/app\n\
-export CHROME_OPTIONS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"\n\
+export EDGE_OPTIONS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"\n\
 # LibreOffice 字体配置\n\
 export OOO_FORCE_DESKTOP=gnome\n\
 export SAL_USE_VCLPLUGIN=gen\n\

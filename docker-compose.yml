@@ -25,13 +25,13 @@ services:
       - "3400:8000"
     volumes:
       - ./:/app
-      - ./chrome_user_data:/app/chrome_user_data
+      - ./edge_user_data:/app/edge_user_data
       # 新增：日报数据文件持久化
       - ./data:/app/data
       # 添加/dev/shm卷映射
       - /dev/shm:/dev/shm
       # 临时目录映射到容器外部
-      - /tmp/chrome_tmp:/tmp/chrome_tmp
+      - /tmp/edge_tmp:/tmp/edge_tmp
       # 添加时间同步
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -82,9 +82,11 @@ services:
       # 新增：日报导出相关环境变量
       - LIBREOFFICE_PATH=/usr/bin/libreoffice
       - POPPLER_PATH=/usr/bin
-      # Chrome配置
-      - CHROME_HEADLESS=true
+      # Edge配置
+      - EDGE_HEADLESS=true
       - SELENIUM_HEADLESS=true
+      # Edge用户数据目录
+      - EDGE_USER_DATA_DIR=/app/edge_user_data
       # 文件上传配置 - 使用本地模式
       - UPLOAD_DRIVER=local
       - APP_DOMAIN=http://localhost:3400
@@ -128,13 +130,13 @@ services:
       - seccomp=unconfined
     volumes:
       - ./:/app
-      - ./chrome_user_data:/app/chrome_user_data
+      - ./edge_user_data:/app/edge_user_data
       # 新增：日报数据文件持久化
       - ./data:/app/data
       # 添加/dev/shm卷映射
       - /dev/shm:/dev/shm
       # 临时目录映射到容器外部
-      - /tmp/chrome_tmp:/tmp/chrome_tmp
+      - /tmp/edge_tmp:/tmp/edge_tmp
       # 添加时间同步
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
