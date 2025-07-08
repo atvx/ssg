@@ -69,23 +69,30 @@ ENV LANG=zh_CN.UTF-8 \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8
 
-# 安装Microsoft Edge和EdgeDriver
+# 安装Microsoft Edge和EdgeDriver - 使用更可靠的方法
 RUN apt-get update && apt-get install -y \
     curl \
     apt-transport-https \
     gnupg \
-    && curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg \
-    && install -o root -g root -m 644 microsoft.gpg /etc/apt/trusted.gpg.d/ \
-    && echo "deb [arch=amd64] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft-edge.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-edge.gpg] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list \
     && apt-get update \
     && apt-get install -y microsoft-edge-stable \
-    && EDGE_VERSION=$(microsoft-edge --version | grep -oP '(?<=Microsoft Edge )[0-9]+') \
-    && LATEST_DRIVER=$(curl -s "https://msedgedriver.azureedge.net/LATEST_RELEASE_${EDGE_VERSION}") \
-    && curl -Lo /tmp/msedgedriver.zip "https://msedgedriver.azureedge.net/${LATEST_DRIVER}/edgedriver_linux64.zip" \
-    && unzip /tmp/msedgedriver.zip -d /tmp/ \
-    && mv /tmp/msedgedriver /usr/local/bin/msedgedriver \
+    && mkdir -p /tmp/edgedriver \
+    && EDGE_VERSION=$(microsoft-edge --version | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+") \
+    && EDGE_MAJOR_VERSION=$(echo $EDGE_VERSION | cut -d '.' -f 1) \
+    && echo "Detected Edge version: $EDGE_VERSION (Major: $EDGE_MAJOR_VERSION)" \
+    && wget -q "https://msedgedriver.azureedge.net/LATEST_RELEASE_${EDGE_MAJOR_VERSION}_LINUX" -O /tmp/edge_version \
+    && DRIVER_VERSION=$(cat /tmp/edge_version) \
+    && echo "EdgeDriver version to install: $DRIVER_VERSION" \
+    && wget -q "https://msedgedriver.azureedge.net/${DRIVER_VERSION}/edgedriver_linux64.zip" -O /tmp/edgedriver.zip \
+    && unzip /tmp/edgedriver.zip -d /tmp/edgedriver \
+    && mv /tmp/edgedriver/msedgedriver /usr/local/bin/ \
     && chmod +x /usr/local/bin/msedgedriver \
-    && rm -rf /tmp/msedgedriver.zip
+    && rm -rf /tmp/edgedriver /tmp/edgedriver.zip /tmp/edge_version \
+    && msedgedriver --version \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # 设置Edge浏览器环境变量
 ENV EDGE_BIN=/usr/bin/microsoft-edge \
