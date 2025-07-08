@@ -66,6 +66,10 @@ DUOWEI_SAVE_TO_FILE=False
 HEADLESS=True
 # Edge用户数据目录
 EDGE_USER_DATA_DIR=edge_user_data
+# 添加浏览器类型环境变量
+SELENIUM_BROWSER=edge
+BROWSER_TYPE=edge
+USE_EDGE=true
 EOF
     
     echo "已创建.env文件，请修改其中的数据库和Redis连接信息。"
@@ -101,6 +105,15 @@ else
         echo "# Edge用户数据目录" >> .env
         echo "EDGE_USER_DATA_DIR=edge_user_data" >> .env
     fi
+    
+    # 添加浏览器类型环境变量
+    if ! grep -q "SELENIUM_BROWSER" .env; then
+        echo "" >> .env
+        echo "# 添加浏览器类型环境变量" >> .env
+        echo "SELENIUM_BROWSER=edge" >> .env
+        echo "BROWSER_TYPE=edge" >> .env
+        echo "USE_EDGE=true" >> .env
+    fi
 fi
 
 # 确保edge_user_data目录存在
@@ -121,8 +134,8 @@ cat > sync_time.sh << EOF
 ntpdate -u cn.pool.ntp.org
 
 # 同步Docker容器的时间
-docker exec ssg-api /usr/local/bin/sync_time
-docker exec ssg-celery-worker /usr/local/bin/sync_time
+docker exec ssg-api /usr/local/bin/sync_time || echo "无法同步API容器时间"
+docker exec ssg-celery-worker /usr/local/bin/sync_time || echo "无法同步Worker容器时间"
 
 echo "\$(date '+%Y-%m-%d %H:%M:%S') 时间同步完成"
 EOF
@@ -153,7 +166,7 @@ if [ \$RESULT -ne 0 ]; then
     
     # 停止并重启服务
     cd \$(dirname \$0)
-    docker compose restart api celery_worker
+    docker compose restart api celery_worker || docker-compose restart api celery_worker
     
     echo "\$(date '+%Y-%m-%d %H:%M:%S') 服务已重启"
 else
@@ -196,17 +209,58 @@ else
     echo "没有发现运行中的容器..."
 fi
 
-# 更新docker-compose.yml文件，添加backoff库安装到容器命令
-echo "更新celery_worker命令，确保在容器内安装backoff库..."
-sed -i 's/command: celery -A celery_app worker/command: bash -c "pip install backoff==2.2.1 \&\& celery -A celery_app worker/g' docker-compose.yml
+# 更新docker-compose.yml文件中的命令
+echo "更新容器命令，确保安装正确的依赖..."
+# 备份原始文件
+cp docker-compose.yml docker-compose.yml.bak
+
+# 更新API容器命令
+sed -i 's/command: >.*pip install backoff==2.2.1 urllib3==2.5.0/command: >\\n      bash -c "\\n      pip install setuptools==68.2.2 urllib3>=2.5.0 --root-user-action=ignore/g' docker-compose.yml
+
+# 更新Celery Worker容器命令
+sed -i 's/command: >.*sleep 60/command: >\\n      bash -c "\\n      sleep 60/g' docker-compose.yml
+sed -i 's/pip install backoff==2.2.1 urllib3==2.5.0/pip install setuptools==68.2.2 urllib3>=2.5.0/g' docker-compose.yml
 
 # 强制重建镜像
 echo "构建Docker镜像..."
-$COMPOSE_CMD build --no-cache --pull
+$COMPOSE_CMD build --no-cache --pull || {
+    echo "构建失败，尝试修复依赖问题..."
+    # 检查requirements.txt中的urllib3版本
+    if grep -q "urllib3==2.0.7" requirements.txt; then
+        echo "检测到urllib3版本冲突，正在修复..."
+        sed -i 's/urllib3==2.0.7/urllib3>=2.5.0/g' requirements.txt
+        echo "已更新requirements.txt中的urllib3版本"
+        # 重新尝试构建
+        $COMPOSE_CMD build --no-cache --pull
+    else
+        echo "构建失败，请检查日志以获取详细错误信息"
+        exit 1
+    fi
+}
 
 # 启动服务
 echo "启动服务..."
 $COMPOSE_CMD up -d
+
+# 等待服务启动
+echo "等待服务启动..."
+sleep 10
+
+# 检查容器状态
+echo "检查容器状态..."
+$COMPOSE_CMD ps
+
+# 检查API容器是否正常运行
+if ! $COMPOSE_CMD ps | grep -q "ssg-api.*Up"; then
+    echo "警告: API容器未正常运行，查看日志..."
+    $COMPOSE_CMD logs api | tail -n 50
+    echo "尝试重新启动API容器..."
+    $COMPOSE_CMD restart api
+    sleep 5
+    if ! $COMPOSE_CMD ps | grep -q "ssg-api.*Up"; then
+        echo "错误: API容器无法正常启动，请检查日志"
+    fi
+fi
 
 echo "=== 9. 部署完成 ==="
 echo "服务已启动，API文档地址: http://localhost:3400/docs"
