@@ -126,33 +126,67 @@ RUN chmod +x /usr/local/bin/selenium_setup.py /usr/local/bin/redis_config.py /us
 
 # 创建一个wrapper脚本来设置环境
 RUN echo '#!/bin/bash\n\
+echo "=== 容器启动 - 初始化环境 ==="\n\
+\n\
 # 同步时间\n\
+echo "同步系统时间..."\n\
 /usr/local/bin/sync_time\n\
 \n\
 # 确保字体缓存刷新\n\
+echo "刷新字体缓存..."\n\
 fc-cache -f -v\n\
 \n\
 # 启动虚拟显示服务器\n\
+echo "启动虚拟显示服务器..."\n\
 Xvfb :99 -screen 0 1920x1080x24 -ac &\n\
-# 确保edge_user_data目录存在并有正确权限\n\
+sleep 2\n\
+\n\
+# 确保目录存在并有正确权限\n\
+echo "创建并设置目录权限..."\n\
 mkdir -p /app/edge_user_data\n\
 chmod -R 777 /app/edge_user_data\n\
-# 确保临时目录存在并有正确权限\n\
 mkdir -p /tmp/edge_tmp\n\
 chmod -R 777 /tmp/edge_tmp\n\
-# 新增：确保日报导出数据目录存在并有正确权限\n\
+mkdir -p /var/run/edge\n\
+chmod -R 777 /var/run/edge\n\
 mkdir -p /app/data\n\
 chmod -R 777 /app/data\n\
+\n\
+# 检查Edge和EdgeDriver是否可用\n\
+echo "检查Edge浏览器和EdgeDriver..."\n\
+if [ -f /usr/bin/microsoft-edge ]; then\n\
+  echo "Edge浏览器存在: $(ls -la /usr/bin/microsoft-edge)"\n\
+  echo "Edge版本: $(/usr/bin/microsoft-edge --version || echo \"无法获取版本\")"\n\
+else\n\
+  echo "错误: Edge浏览器不存在!"\n\
+fi\n\
+\n\
+if [ -f /usr/local/bin/msedgedriver ]; then\n\
+  echo "EdgeDriver存在: $(ls -la /usr/local/bin/msedgedriver)"\n\
+  echo "EdgeDriver版本: $(/usr/local/bin/msedgedriver --version || echo \"无法获取版本\")"\n\
+else\n\
+  echo "错误: EdgeDriver不存在!"\n\
+fi\n\
+\n\
 # 运行Selenium设置脚本\n\
+echo "运行Selenium设置脚本..."\n\
 python /usr/local/bin/selenium_setup.py\n\
+\n\
 # 运行Redis配置脚本\n\
+echo "运行Redis配置脚本..."\n\
 python /usr/local/bin/redis_setup.py\n\
+\n\
 # 设置环境变量\n\
+echo "设置环境变量..."\n\
 export PYTHONPATH=/app\n\
 export EDGE_OPTIONS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"\n\
-# LibreOffice 字体配置\n\
 export OOO_FORCE_DESKTOP=gnome\n\
 export SAL_USE_VCLPLUGIN=gen\n\
+\n\
+# 显示启动命令\n\
+echo "启动命令: $@"\n\
+echo "=== 环境初始化完成，开始执行命令 ==="\n\
+\n\
 # 执行命令\n\
 exec "$@"' > /usr/local/bin/entrypoint.sh && \
 chmod +x /usr/local/bin/entrypoint.sh
@@ -164,4 +198,4 @@ COPY . .
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # 设置容器默认命令
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "120"] 
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "120", "--log-level", "debug"] 

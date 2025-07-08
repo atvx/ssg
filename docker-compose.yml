@@ -39,7 +39,7 @@ services:
       - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
     environment:
       - APP_NAME=销售数据获取系统
-      - DEBUG=False
+      - DEBUG=True
       - API_V1_STR=/api
       - DATABASE_URL=${DATABASE_URL}  # 连接外部MySQL服务
       - REDIS_URL=${REDIS_URL}        # 连接外部Redis服务
@@ -95,16 +95,23 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    command: bash -c "cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py && python /tmp/selenium_setup_tmp.py && rm -f /tmp/selenium_setup_tmp.py && pip install backoff==2.2.1 urllib3==2.5.0 --root-user-action=ignore && uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120"
+    command: >
+      bash -c "
+      cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py && 
+      python /tmp/selenium_setup_tmp.py && 
+      rm -f /tmp/selenium_setup_tmp.py && 
+      pip install backoff==2.2.1 urllib3==2.5.0 --root-user-action=ignore && 
+      python -m uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120 --log-level debug
+      "
     networks:
       - ssg-network
     # 添加健康检查
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "--max-time", "10"]
-      interval: 60s
-      timeout: 15s
-      retries: 5
-      start_period: 120s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ping", "--max-time", "15"]
+      interval: 180s
+      timeout: 30s
+      retries: 3
+      start_period: 300s
 
   celery_worker:
     build:
@@ -144,6 +151,7 @@ services:
       - ./selenium_setup.py:/usr/local/bin/selenium_setup.py
     command: >
       bash -c "
+      sleep 60 &&
       cp /usr/local/bin/selenium_setup.py /tmp/selenium_setup_tmp.py &&
       python /tmp/selenium_setup_tmp.py &&
       rm -f /tmp/selenium_setup_tmp.py &&
@@ -160,7 +168,7 @@ services:
       --without-mingle"
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     networks:
       - ssg-network
 
