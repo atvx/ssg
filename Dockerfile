@@ -69,7 +69,7 @@ ENV LANG=zh_CN.UTF-8 \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8
 
-# 安装Microsoft Edge和EdgeDriver - 使用更可靠的方法
+# 安装Microsoft Edge - 分开安装Edge和EdgeDriver
 RUN apt-get update && apt-get install -y \
     curl \
     apt-transport-https \
@@ -78,21 +78,17 @@ RUN apt-get update && apt-get install -y \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-edge.gpg] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list \
     && apt-get update \
     && apt-get install -y microsoft-edge-stable \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装EdgeDriver - 使用固定版本号
+RUN EDGE_DRIVER_VERSION="138.0.3351.77" \
     && mkdir -p /tmp/edgedriver \
-    && EDGE_VERSION=$(microsoft-edge --version | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+") \
-    && EDGE_MAJOR_VERSION=$(echo $EDGE_VERSION | cut -d '.' -f 1) \
-    && echo "Detected Edge version: $EDGE_VERSION (Major: $EDGE_MAJOR_VERSION)" \
-    && wget -q "https://msedgedriver.azureedge.net/LATEST_RELEASE_${EDGE_MAJOR_VERSION}_LINUX" -O /tmp/edge_version \
-    && DRIVER_VERSION=$(cat /tmp/edge_version) \
-    && echo "EdgeDriver version to install: $DRIVER_VERSION" \
-    && wget -q "https://msedgedriver.azureedge.net/${DRIVER_VERSION}/edgedriver_linux64.zip" -O /tmp/edgedriver.zip \
+    && wget -q "https://msedgedriver.azureedge.net/${EDGE_DRIVER_VERSION}/edgedriver_linux64.zip" -O /tmp/edgedriver.zip \
     && unzip /tmp/edgedriver.zip -d /tmp/edgedriver \
     && mv /tmp/edgedriver/msedgedriver /usr/local/bin/ \
     && chmod +x /usr/local/bin/msedgedriver \
-    && rm -rf /tmp/edgedriver /tmp/edgedriver.zip /tmp/edge_version \
-    && msedgedriver --version \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /tmp/edgedriver /tmp/edgedriver.zip
 
 # 设置Edge浏览器环境变量
 ENV EDGE_BIN=/usr/bin/microsoft-edge \
