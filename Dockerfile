@@ -136,9 +136,13 @@ RUN chmod +x /usr/local/bin/*.py
 RUN echo '#!/bin/bash' > /usr/local/bin/entrypoint.sh && \
     echo 'set -e' >> /usr/local/bin/entrypoint.sh && \
     echo 'echo "=== 容器启动 - 快速初始化 ==="' >> /usr/local/bin/entrypoint.sh && \
+    echo '# 清理可能存在的X服务器lock文件和进程' >> /usr/local/bin/entrypoint.sh && \
+    echo 'pkill -f "Xvfb :99" 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh && \
+    echo 'rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh && \
     echo '# 启动虚拟显示服务器' >> /usr/local/bin/entrypoint.sh && \
     echo 'Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &' >> /usr/local/bin/entrypoint.sh && \
     echo 'XVFB_PID=$!' >> /usr/local/bin/entrypoint.sh && \
+    echo 'sleep 1  # 等待Xvfb启动' >> /usr/local/bin/entrypoint.sh && \
     echo '# 快速创建目录' >> /usr/local/bin/entrypoint.sh && \
     echo 'mkdir -p /app/{edge_user_data,data} /tmp/edge_tmp /var/run/edge' >> /usr/local/bin/entrypoint.sh && \
     echo 'chmod -R 777 /app/edge_user_data /tmp/edge_tmp /var/run/edge /app/data' >> /usr/local/bin/entrypoint.sh && \
