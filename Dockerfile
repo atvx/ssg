@@ -1,7 +1,7 @@
 # ========================
 # 阶段1: 构建阶段
 # ========================
-FROM python:3.13-slim as builder
+FROM python:3.13-slim AS builder
 
 # 设置构建环境和时区
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -43,7 +43,7 @@ RUN pip install --no-cache-dir --root-user-action=ignore --upgrade pip \
 # ========================
 # 阶段2: 运行时阶段
 # ========================
-FROM python:3.13-slim as runtime
+FROM python:3.13-slim AS runtime
 
 # 设置工作目录
 WORKDIR /app
@@ -135,17 +135,15 @@ RUN chmod +x /usr/local/bin/*.py
 RUN echo '#!/bin/bash' > /usr/local/bin/entrypoint.sh && \
     echo 'set -e' >> /usr/local/bin/entrypoint.sh && \
     echo 'echo "=== 容器启动 - 快速初始化 ==="' >> /usr/local/bin/entrypoint.sh && \
-    echo '# 并行执行非关键初始化任务' >> /usr/local/bin/entrypoint.sh && \
-    echo '{' >> /usr/local/bin/entrypoint.sh && \
-    echo '    /usr/local/bin/sync_time 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh && \
-    echo '    fc-cache -f -v 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh && \
-    echo '} &' >> /usr/local/bin/entrypoint.sh && \
     echo '# 启动虚拟显示服务器' >> /usr/local/bin/entrypoint.sh && \
     echo 'Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &' >> /usr/local/bin/entrypoint.sh && \
     echo 'XVFB_PID=$!' >> /usr/local/bin/entrypoint.sh && \
     echo '# 快速创建目录' >> /usr/local/bin/entrypoint.sh && \
     echo 'mkdir -p /app/{edge_user_data,data} /tmp/edge_tmp /var/run/edge' >> /usr/local/bin/entrypoint.sh && \
     echo 'chmod -R 777 /app/edge_user_data /tmp/edge_tmp /var/run/edge /app/data' >> /usr/local/bin/entrypoint.sh && \
+    echo '# 执行非关键初始化任务（同步执行，避免wait阻塞）' >> /usr/local/bin/entrypoint.sh && \
+    echo '/usr/local/bin/sync_time 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh && \
+    echo 'fc-cache -f -v >/dev/null 2>&1 || true' >> /usr/local/bin/entrypoint.sh && \
     echo '# 检查Edge浏览器' >> /usr/local/bin/entrypoint.sh && \
     echo 'if [ -f /usr/bin/microsoft-edge ]; then' >> /usr/local/bin/entrypoint.sh && \
     echo '    echo "✓ Edge浏览器已安装"' >> /usr/local/bin/entrypoint.sh && \
@@ -158,15 +156,14 @@ RUN echo '#!/bin/bash' > /usr/local/bin/entrypoint.sh && \
     echo 'export EDGE_OPTIONS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"' >> /usr/local/bin/entrypoint.sh && \
     echo 'export OOO_FORCE_DESKTOP=gnome' >> /usr/local/bin/entrypoint.sh && \
     echo 'export SAL_USE_VCLPLUGIN=gen' >> /usr/local/bin/entrypoint.sh && \
-    echo '# 等待后台任务完成' >> /usr/local/bin/entrypoint.sh && \
-    echo 'wait' >> /usr/local/bin/entrypoint.sh && \
     echo '# 快速运行配置脚本' >> /usr/local/bin/entrypoint.sh && \
-    echo 'python /usr/local/bin/selenium_setup.py 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh && \
-    echo 'python /usr/local/bin/redis_setup.py 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh && \
+    echo 'python /usr/local/bin/selenium_setup.py >/dev/null 2>&1 || true' >> /usr/local/bin/entrypoint.sh && \
+    echo 'python /usr/local/bin/redis_setup.py >/dev/null 2>&1 || true' >> /usr/local/bin/entrypoint.sh && \
     echo 'echo "=== 初始化完成，启动应用 ==="' >> /usr/local/bin/entrypoint.sh && \
     echo '# 确保在退出时清理Xvfb进程' >> /usr/local/bin/entrypoint.sh && \
     echo 'trap "kill $XVFB_PID 2>/dev/null || true" EXIT' >> /usr/local/bin/entrypoint.sh && \
     echo '# 执行主命令' >> /usr/local/bin/entrypoint.sh && \
+    echo 'echo "启动命令: $@"' >> /usr/local/bin/entrypoint.sh && \
     echo 'exec "$@"' >> /usr/local/bin/entrypoint.sh
 
 RUN chmod +x /usr/local/bin/entrypoint.sh
