@@ -102,7 +102,7 @@ services:
         hard: 65536
     command: >
       bash -c "
-      pip install setuptools==68.2.2 --root-user-action=ignore &&
+      pip install setuptools==68.2.2 blinker==1.6.3 --root-user-action=ignore &&
       python -m uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120 --log-level debug
       "
     networks:
@@ -167,7 +167,7 @@ services:
     command: >
       bash -c "
       sleep 60 &&
-      pip install setuptools==68.2.2 --root-user-action=ignore &&
+      pip install setuptools==68.2.2 blinker==1.6.3 --root-user-action=ignore &&
       celery -A celery_app.celery worker
       --loglevel=INFO
       --concurrency=2
