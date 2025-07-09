@@ -3,16 +3,27 @@
 # ========================
 from python:3.13-slim as builder
 
-# 设置构建环境
+# 设置构建环境和时区
 env PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    TZ=Asia/Shanghai \
+    DEBIAN_FRONTEND=noninteractive \
+    APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
+
+# 修复GPG密钥和时间同步问题
+run ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
+    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-valid-until && \
+    echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90assumeyes
 
 # 安装构建依赖
-run apt-get update && apt-get install -y --no-install-recommends \
+run apt-get update --allow-releaseinfo-change && \
+    apt-get install -y --no-install-recommends --allow-unauthenticated \
     build-essential \
     curl \
+    ca-certificates \
+    gnupg \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -43,17 +54,20 @@ env PYTHONDONTWRITEBYTECODE=1 \
     LANG=zh_CN.UTF-8 \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8 \
-    DISPLAY=:99
+    DISPLAY=:99 \
+    APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
 
 # 从构建阶段复制Python包
 copy --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 copy --from=builder /usr/local/bin /usr/local/bin
 
 # 一次性安装所有运行时依赖
-run apt-get update -o Acquire::Check-Valid-Until=false \
-    && apt-get install -y --no-install-recommends \
+run echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-valid-until && \
+    echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90assumeyes && \
+    apt-get update --allow-releaseinfo-change -o Acquire::Check-Valid-Until=false \
+    && apt-get install -y --no-install-recommends --allow-unauthenticated \
     # 基础工具
-    wget curl unzip gnupg apt-transport-https \
+    wget curl unzip gnupg apt-transport-https ca-certificates \
     # 虚拟显示和进程管理
     xvfb procps net-tools netcat-openbsd \
     # 字体支持
@@ -71,8 +85,8 @@ run apt-get update -o Acquire::Check-Valid-Until=false \
     # 添加Microsoft Edge仓库
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft-edge.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-edge.gpg] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends microsoft-edge-stable \
+    && apt-get update --allow-releaseinfo-change \
+    && apt-get install -y --no-install-recommends --allow-unauthenticated microsoft-edge-stable \
     # 配置本地化
     && sed -i -e 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen \
     && locale-gen \
@@ -111,7 +125,7 @@ copy selenium_setup.py redis_config.py redis_setup.py /usr/local/bin/
 run chmod +x /usr/local/bin/*.py
 
 # 创建优化的entrypoint脚本
-RUN echo '#!/bin/bash' > /usr/local/bin/entrypoint.sh && \
+run echo '#!/bin/bash' > /usr/local/bin/entrypoint.sh && \
     echo 'set -e' >> /usr/local/bin/entrypoint.sh && \
     echo 'echo "=== 容器启动 - 快速初始化 ==="' >> /usr/local/bin/entrypoint.sh && \
     echo '# 并行执行非关键初始化任务' >> /usr/local/bin/entrypoint.sh && \
