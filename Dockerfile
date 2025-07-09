@@ -17,17 +17,19 @@ run ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone &
     echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-valid-until && \
     echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90assumeyes
 
-# 安装构建依赖
+# 安装构建依赖并清理
 run apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends --allow-unauthenticated \
     build-essential \
     curl \
     ca-certificates \
     gnupg \
+    && apt-get autoremove -y \
+    && apt-get autoclean \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/*
 
-# 复制并安装Python依赖
+# 复制并安装Python依赖，立即清理缓存
 copy requirements.txt .
 run pip install --no-cache-dir --root-user-action=ignore --upgrade pip \
     && pip install --no-cache-dir --root-user-action=ignore \
@@ -35,7 +37,8 @@ run pip install --no-cache-dir --root-user-action=ignore --upgrade pip \
        --timeout 60 \
        -r requirements.txt \
     && pip install --no-cache-dir --root-user-action=ignore \
-       selenium-wire pyvirtualdisplay retry timeout-decorator requests-toolbelt tenacity
+       selenium-wire pyvirtualdisplay retry timeout-decorator requests-toolbelt tenacity \
+    && rm -rf /tmp/* /var/tmp/* ~/.cache/pip /root/.cache
 
 # ========================
 # 阶段2: 运行时阶段
@@ -97,12 +100,16 @@ run echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-
     # 创建时间同步脚本
     && echo '#!/bin/bash\nntpdate -u cn.pool.ntp.org || true' > /usr/local/bin/sync_time \
     && chmod +x /usr/local/bin/sync_time \
-    # 彻底清理
+    # 彻底清理所有缓存和临时文件
     && apt-get autoremove -y \
     && apt-get autoclean \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
-    && rm -rf /usr/share/doc /usr/share/man /usr/share/locale
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/* \
+    && rm -rf /usr/share/doc /usr/share/man /usr/share/locale /usr/share/info \
+    && rm -rf ~/.cache /root/.cache \
+    && find /var/log -type f -exec truncate -s 0 {} \; \
+    && find /usr -name "*.pyc" -delete \
+    && find /usr -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # 设置应用相关环境变量
 env EDGE_BIN=/usr/bin/microsoft-edge \
@@ -166,6 +173,12 @@ run chmod +x /usr/local/bin/entrypoint.sh
 
 # 最后复制项目文件（利用.dockerignore优化）
 copy . .
+
+# 复制后立即清理不需要的文件
+run rm -rf /app/*.tar /app/*.tar.gz /app/*.zip /app/*.bak \
+    && find /app -name "*.pyc" -delete \
+    && find /app -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true \
+    && rm -rf /tmp/* /var/tmp/*
 
 # 设置容器入口点
 entrypoint ["/usr/local/bin/entrypoint.sh"]

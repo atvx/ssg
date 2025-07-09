@@ -14,6 +14,21 @@ if [ "$(id -u)" != "0" ]; then
    exit 1
 fi
 
+# 检查磁盘空间
+echo "=== 检查系统磁盘空间 ==="
+DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+echo "当前根分区使用率: ${DISK_USAGE}%"
+
+if [ $DISK_USAGE -gt 85 ]; then
+    echo "警告: 磁盘空间不足，使用率已达到 ${DISK_USAGE}%"
+    echo "建议清理磁盘空间后再继续..."
+    read -p "是否继续部署? (y/N): " CONTINUE
+    if [ "$CONTINUE" != "y" ] && [ "$CONTINUE" != "Y" ]; then
+        echo "部署已取消"
+        exit 1
+    fi
+fi
+
 echo "=== 1. 创建环境变量文件 ==="
 if [ ! -f .env ]; then
     cat > .env << EOF
@@ -193,14 +208,44 @@ chmod +x redis_monitor.sh
 (crontab -l 2>/dev/null || echo "") | grep -v "redis_monitor.sh" | { cat; echo "*/15 * * * * $(pwd)/redis_monitor.sh >> $(pwd)/redis_monitor.log 2>&1"; } | crontab -
 
 # 清理Docker缓存和未使用的镜像/卷
-echo "=== 7. 清理Docker系统缓存 ==="
-echo "清理Docker缓存以释放空间..."
-docker system prune -f
-docker image prune -f
-docker volume prune -f
-docker builder prune -f
+echo "=== 7. 清理项目临时文件 ==="
+echo "清理项目中的临时文件和缓存..."
+find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+find . -name "*.pyc" -delete 2>/dev/null || true
+find . -name "*.pyo" -delete 2>/dev/null || true
+find . -name "*.log" -delete 2>/dev/null || true
+find . -name "*.tmp" -delete 2>/dev/null || true
+find . -name "*.bak" -delete 2>/dev/null || true
+rm -rf logs/* 2>/dev/null || true
+rm -rf data/*.json 2>/dev/null || true
+rm -rf *.tar *.tar.gz *.zip 2>/dev/null || true
 
-echo "=== 8. 构建和启动Docker服务 ==="
+echo "=== 8. 彻底清理Docker系统缓存 ==="
+echo "停止所有容器..."
+docker stop $(docker ps -aq) 2>/dev/null || true
+
+echo "清理所有未使用的容器..."
+docker container prune -f
+
+echo "清理所有未使用的镜像..."
+docker image prune -a -f
+
+echo "清理所有未使用的卷..."
+docker volume prune -f
+
+echo "清理所有网络..."
+docker network prune -f
+
+echo "清理构建缓存..."
+docker builder prune -a -f
+
+echo "清理整个Docker系统（包括dangling资源）..."
+docker system prune -a -f --volumes
+
+echo "检查磁盘空间..."
+df -h
+
+echo "=== 9. 构建和启动Docker服务 ==="
 # 检测Docker Compose命令格式
 if command -v docker &> /dev/null && docker compose version &> /dev/null; then
     COMPOSE_CMD="docker compose"
@@ -270,7 +315,7 @@ if ! $COMPOSE_CMD ps | grep -q "ssg-api.*Up"; then
     fi
 fi
 
-echo "=== 9. 部署完成 ==="
+echo "=== 10. 部署完成 ==="
 echo "服务已启动，API文档地址: http://localhost:3400/docs"
 echo
 
@@ -282,9 +327,20 @@ $COMPOSE_CMD ps
 echo "=== 执行时间同步 ==="
 ./sync_time.sh
 
+# echo
+# echo "=== 最终磁盘使用情况 ==="
+# df -h
+
+# echo
+# echo "=== Docker系统信息 ==="
+# docker system df
+
 echo
 echo "使用以下命令查看服务日志："
 echo "API服务日志: $COMPOSE_CMD logs -f api"
 echo "Celery Worker日志: $COMPOSE_CMD logs -f celery_worker"
+echo
+echo "如果构建失败，请检查磁盘空间并运行以下命令清理："
+echo "docker system prune -a -f --volumes"
 echo
 echo "感谢使用销售数据获取系统！" 

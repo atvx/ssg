@@ -105,4 +105,40 @@ docker_setup.sh
 
 # 其他
 *.bak
-*.orig 
+*.orig
+
+# 大文件和可能的缓存目录
+*.tar
+*.tar.gz
+*.zip
+*.rar
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# 运行时生成的文件
+*.pid
+*.sock
+*.lock
+
+# 备份文件
+docker-compose.yml.bak
+Dockerfile.bak
+
+# 任何可能的大数据文件
+*.csv
+*.json
+*.xlsx
+*.xls
+
+# WebDriver相关文件
+*.crx
+chromedriver*
+edgedriver*
+geckodriver*
+
+# 开发工具
+.coverage*
+htmlcov/ 
