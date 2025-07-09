@@ -14,6 +14,9 @@ if [ "$(id -u)" != "0" ]; then
    exit 1
 fi
 
+# 项目名称（用于识别项目相关容器）
+PROJECT_NAME="ssg"
+
 # 检查磁盘空间
 echo "=== 检查系统磁盘空间 ==="
 DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
@@ -207,7 +210,7 @@ chmod +x redis_monitor.sh
 # 添加Redis连接监控定时任务
 (crontab -l 2>/dev/null || echo "") | grep -v "redis_monitor.sh" | { cat; echo "*/15 * * * * $(pwd)/redis_monitor.sh >> $(pwd)/redis_monitor.log 2>&1"; } | crontab -
 
-# 清理Docker缓存和未使用的镜像/卷
+# 清理项目临时文件（快速清理）
 echo "=== 7. 清理项目临时文件 ==="
 echo "清理项目中的临时文件和缓存..."
 find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -220,32 +223,7 @@ rm -rf logs/* 2>/dev/null || true
 rm -rf data/*.json 2>/dev/null || true
 rm -rf *.tar *.tar.gz *.zip 2>/dev/null || true
 
-echo "=== 8. 彻底清理Docker系统缓存 ==="
-echo "停止所有容器..."
-docker stop $(docker ps -aq) 2>/dev/null || true
-
-echo "清理所有未使用的容器..."
-docker container prune -f
-
-echo "清理所有未使用的镜像..."
-docker image prune -a -f
-
-echo "清理所有未使用的卷..."
-docker volume prune -f
-
-echo "清理所有网络..."
-docker network prune -f
-
-echo "清理构建缓存..."
-docker builder prune -a -f
-
-echo "清理整个Docker系统（包括dangling资源）..."
-docker system prune -a -f --volumes
-
-echo "检查磁盘空间..."
-df -h
-
-echo "=== 9. 构建和启动Docker服务 ==="
+echo "=== 8. 智能清理项目相关Docker资源 ==="
 # 检测Docker Compose命令格式
 if command -v docker &> /dev/null && docker compose version &> /dev/null; then
     COMPOSE_CMD="docker compose"
@@ -258,25 +236,36 @@ fi
 
 echo "使用的Docker Compose命令: $COMPOSE_CMD"
 
-# 检查当前是否有容器在运行
-if $COMPOSE_CMD ps -q &>/dev/null; then
-    # 停止现有容器
-    echo "停止并移除现有容器..."
-    $COMPOSE_CMD down || true
-else
-    echo "没有发现运行中的容器..."
+# 只停止项目相关的容器
+echo "停止项目相关容器..."
+$COMPOSE_CMD down 2>/dev/null || true
+
+# 只清理项目相关的镜像（带项目名标签的）
+echo "清理项目相关镜像..."
+PROJECT_IMAGES=$(docker images --filter=reference="*${PROJECT_NAME}*" -q 2>/dev/null || true)
+if [ -n "$PROJECT_IMAGES" ]; then
+    docker rmi $PROJECT_IMAGES -f 2>/dev/null || true
 fi
+
+# 清理dangling镜像（未标记的镜像）
+echo "清理未标记的镜像..."
+DANGLING_IMAGES=$(docker images -f "dangling=true" -q 2>/dev/null || true)
+if [ -n "$DANGLING_IMAGES" ]; then
+    docker rmi $DANGLING_IMAGES -f 2>/dev/null || true
+fi
+
+# 清理构建缓存（只清理构建缓存，不影响其他容器）
+echo "清理Docker构建缓存..."
+docker builder prune -f 2>/dev/null || true
+
+echo "=== 9. 构建和启动Docker服务 ==="
 
 # 检查docker-compose.yml文件
 echo "检查docker-compose.yml配置..."
-# 备份原始文件
-cp docker-compose.yml docker-compose.yml.bak
 
-echo "跳过文件更新，使用现有的docker-compose.yml配置"
-
-# 强制重建镜像
-echo "构建Docker镜像..."
-$COMPOSE_CMD build --no-cache --pull || {
+# 优化构建：使用缓存
+echo "构建Docker镜像（使用缓存优化）..."
+$COMPOSE_CMD build --pull || {
     echo "构建失败，尝试修复依赖问题..."
     # 检查requirements.txt中的urllib3版本
     if grep -q "urllib3==2.0.7" requirements.txt; then
@@ -284,7 +273,7 @@ $COMPOSE_CMD build --no-cache --pull || {
         sed -i 's/urllib3==2.0.7/urllib3>=2.5.0/g' requirements.txt
         echo "已更新requirements.txt中的urllib3版本"
         # 重新尝试构建
-        $COMPOSE_CMD build --no-cache --pull
+        $COMPOSE_CMD build --pull
     else
         echo "构建失败，请检查日志以获取详细错误信息"
         exit 1
@@ -295,9 +284,9 @@ $COMPOSE_CMD build --no-cache --pull || {
 echo "启动服务..."
 $COMPOSE_CMD up -d
 
-# 等待服务启动
+# 减少等待时间，只等待必要的启动时间
 echo "等待服务启动..."
-sleep 10
+sleep 5
 
 # 检查容器状态
 echo "检查容器状态..."
@@ -306,10 +295,10 @@ $COMPOSE_CMD ps
 # 检查API容器是否正常运行
 if ! $COMPOSE_CMD ps | grep -q "ssg-api.*Up"; then
     echo "警告: API容器未正常运行，查看日志..."
-    $COMPOSE_CMD logs api | tail -n 50
+    $COMPOSE_CMD logs api | tail -n 20
     echo "尝试重新启动API容器..."
     $COMPOSE_CMD restart api
-    sleep 5
+    sleep 3
     if ! $COMPOSE_CMD ps | grep -q "ssg-api.*Up"; then
         echo "错误: API容器无法正常启动，请检查日志"
     fi
@@ -327,20 +316,12 @@ $COMPOSE_CMD ps
 echo "=== 执行时间同步 ==="
 ./sync_time.sh
 
-# echo
-# echo "=== 最终磁盘使用情况 ==="
-# df -h
-
-# echo
-# echo "=== Docker系统信息 ==="
-# docker system df
-
 echo
 echo "使用以下命令查看服务日志："
 echo "API服务日志: $COMPOSE_CMD logs -f api"
 echo "Celery Worker日志: $COMPOSE_CMD logs -f celery_worker"
 echo
-echo "如果构建失败，请检查磁盘空间并运行以下命令清理："
-echo "docker system prune -a -f --volumes"
+echo "如果需要清理更多Docker资源，请手动运行："
+echo "docker system prune -f  # 清理未使用的网络、卷等"
 echo
 echo "感谢使用销售数据获取系统！" 

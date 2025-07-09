@@ -1,10 +1,10 @@
 # ========================
 # 阶段1: 构建阶段
 # ========================
-from python:3.13-slim as builder
+FROM python:3.13-slim as builder
 
 # 设置构建环境和时区
-env PYTHONDONTWRITEBYTECODE=1 \
+ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -13,12 +13,12 @@ env PYTHONDONTWRITEBYTECODE=1 \
     APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
 
 # 修复GPG密钥和时间同步问题
-run ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
     echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-valid-until && \
     echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90assumeyes
 
 # 安装构建依赖并清理
-run apt-get update --allow-releaseinfo-change && \
+RUN apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends --allow-unauthenticated \
     build-essential \
     curl \
@@ -30,8 +30,8 @@ run apt-get update --allow-releaseinfo-change && \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/*
 
 # 复制并安装Python依赖，立即清理缓存
-copy requirements.txt .
-run pip install --no-cache-dir --root-user-action=ignore --upgrade pip \
+COPY requirements.txt .
+RUN pip install --no-cache-dir --root-user-action=ignore --upgrade pip \
     && pip install --no-cache-dir --root-user-action=ignore \
        --find-links https://pypi.tuna.tsinghua.edu.cn/simple/ \
        --timeout 60 \
@@ -43,13 +43,13 @@ run pip install --no-cache-dir --root-user-action=ignore --upgrade pip \
 # ========================
 # 阶段2: 运行时阶段
 # ========================
-from python:3.13-slim as runtime
+FROM python:3.13-slim as runtime
 
 # 设置工作目录
-workdir /app
+WORKDIR /app
 
 # 设置环境变量
-env PYTHONDONTWRITEBYTECODE=1 \
+ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     DEBIAN_FRONTEND=noninteractive \
@@ -61,11 +61,11 @@ env PYTHONDONTWRITEBYTECODE=1 \
     APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
 
 # 从构建阶段复制Python包
-copy --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
-copy --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # 一次性安装所有运行时依赖
-run echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-valid-until && \
+RUN echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-valid-until && \
     echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90assumeyes && \
     apt-get update --allow-releaseinfo-change -o Acquire::Check-Valid-Until=false \
     && apt-get install -y --no-install-recommends --allow-unauthenticated \
@@ -112,7 +112,7 @@ run echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-
     && find /usr -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # 设置应用相关环境变量
-env EDGE_BIN=/usr/bin/microsoft-edge \
+ENV EDGE_BIN=/usr/bin/microsoft-edge \
     EDGE_PATH=/usr/bin/microsoft-edge \
     SELENIUM_BROWSER_BINARY="/usr/bin/microsoft-edge" \
     EDGE_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --remote-debugging-port=9222 --disable-extensions --disable-dev-tools --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars" \
@@ -128,11 +128,11 @@ env EDGE_BIN=/usr/bin/microsoft-edge \
     REDIS_MAX_CONNECTIONS=20
 
 # 复制配置脚本
-copy selenium_setup.py redis_config.py redis_setup.py /usr/local/bin/
-run chmod +x /usr/local/bin/*.py
+COPY selenium_setup.py redis_config.py redis_setup.py /usr/local/bin/
+RUN chmod +x /usr/local/bin/*.py
 
 # 创建优化的entrypoint脚本
-run echo '#!/bin/bash' > /usr/local/bin/entrypoint.sh && \
+RUN echo '#!/bin/bash' > /usr/local/bin/entrypoint.sh && \
     echo 'set -e' >> /usr/local/bin/entrypoint.sh && \
     echo 'echo "=== 容器启动 - 快速初始化 ==="' >> /usr/local/bin/entrypoint.sh && \
     echo '# 并行执行非关键初始化任务' >> /usr/local/bin/entrypoint.sh && \
@@ -169,19 +169,19 @@ run echo '#!/bin/bash' > /usr/local/bin/entrypoint.sh && \
     echo '# 执行主命令' >> /usr/local/bin/entrypoint.sh && \
     echo 'exec "$@"' >> /usr/local/bin/entrypoint.sh
 
-run chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # 最后复制项目文件（利用.dockerignore优化）
-copy . .
+COPY . .
 
 # 复制后立即清理不需要的文件
-run rm -rf /app/*.tar /app/*.tar.gz /app/*.zip /app/*.bak \
+RUN rm -rf /app/*.tar /app/*.tar.gz /app/*.zip /app/*.bak \
     && find /app -name "*.pyc" -delete \
     && find /app -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true \
     && rm -rf /tmp/* /var/tmp/*
 
 # 设置容器入口点
-entrypoint ["/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # 设置容器默认命令
-cmd ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "120", "--log-level", "info"] 
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "120", "--log-level", "info"] 
