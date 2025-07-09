@@ -58,12 +58,8 @@ def check_browser_binaries():
     if not edge_found:
         logger.warning("未找到Edge浏览器，可能需要安装")
     
-    # 检查EdgeDriver
-    edgedriver_path = "/usr/local/bin/msedgedriver"
-    if os.path.exists(edgedriver_path):
-        logger.info(f"找到EdgeDriver: {edgedriver_path}")
-    else:
-        logger.warning("未找到EdgeDriver，可能需要安装")
+    # EdgeDriver现在通过webdriver-manager自动管理
+    logger.info("EdgeDriver将通过webdriver-manager自动下载和管理")
 
 
 def setup_edge_preferences():
@@ -158,20 +154,24 @@ def setup_edge_preferences():
 
 def setup_selenium_env():
     """设置Selenium环境变量"""
-    # 设置Edge和WebDriver环境变量
+    # 设置Edge浏览器环境变量
     os.environ["EDGE_BIN"] = "/usr/bin/microsoft-edge"
     os.environ["EDGE_PATH"] = "/usr/bin/microsoft-edge"
-    os.environ["MSEDGEDRIVER_PATH"] = "/usr/local/bin/msedgedriver"
-    os.environ["SELENIUM_DRIVER_PATH"] = "/usr/local/bin/msedgedriver"
     os.environ["SELENIUM_BROWSER_BINARY"] = "/usr/bin/microsoft-edge"
     os.environ["SELENIUM_BROWSER"] = "edge"
     os.environ["BROWSER_TYPE"] = "edge"
     os.environ["USE_EDGE"] = "true"
     
+    # 设置webdriver-manager环境变量
+    os.environ["WDM_LOG_LEVEL"] = "0"
+    os.environ["WDM_SSL_VERIFY"] = "0"
+    os.environ["WDM_LOCAL"] = "1"
+    os.environ["WDM_PRINT_FIRST_LINE"] = "False"
+    
     # 设置Edge启动选项
     os.environ["EDGE_OPTIONS"] = "--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --disable-software-rasterizer --disable-extensions --window-size=1920,1080 --single-process --disable-background-networking --ignore-certificate-errors --disable-infobars --disable-dev-tools"
     
-    logger.info("已设置Selenium环境变量")
+    logger.info("已设置Selenium和webdriver-manager环境变量")
 
 def main():
     """主函数"""

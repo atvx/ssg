@@ -10,7 +10,7 @@
 1. Python 3.9+
 2. MySQL 数据库
 3. Redis 服务
-4. Chrome 浏览器（用于数据爬取）
+4. Microsoft Edge 浏览器（用于数据爬取，系统会自动管理EdgeDriver）
 
 ### 安装步骤
 
@@ -42,6 +42,14 @@
      REDIS_URL=redis://[:密码@]Redis地址:6379/0
      CELERY_BROKER_URL=redis://[:密码@]Redis地址:6379/0
      CELERY_RESULT_BACKEND=redis://[:密码@]Redis地址:6379/0
+     
+     # 浏览器配置
+     HEADLESS=True
+     EDGE_USER_DATA_DIR=edge_user_data
+     
+     # webdriver-manager配置（可选）
+     WDM_LOG_LEVEL=0
+     WDM_SSL_VERIFY=0
      ```
 
 5. **启动应用**
@@ -82,6 +90,23 @@
 
 4. **访问API文档**
    - 浏览器访问：http://localhost:8000/docs
+
+## 浏览器配置说明
+
+### EdgeDriver自动管理
+系统现已集成`webdriver-manager`来自动下载和管理EdgeDriver：
+- 首次运行时会自动下载匹配的EdgeDriver版本
+- 无需手动下载或配置EdgeDriver路径
+- 支持自动版本匹配和更新
+
+### 环境变量配置
+可通过以下环境变量配置webdriver-manager：
+```bash
+WDM_LOG_LEVEL=0          # 日志级别（0=关闭详细日志）
+WDM_SSL_VERIFY=0         # 禁用SSL验证
+WDM_LOCAL=1              # 使用本地缓存
+WDM_PRINT_FIRST_LINE=False  # 不打印首行信息
+```
 
 ## 端口占用问题解决
 
@@ -128,6 +153,12 @@
    - 确认Celery配置正确
 
 3. **数据获取失败**
-   - 检查Chrome浏览器安装情况
-   - 确认网络连接正常
-   - 检查目标网站登录凭证是否有效 
+   - 检查Microsoft Edge浏览器安装情况
+   - 确认网络连接正常（EdgeDriver会自动下载）
+   - 检查目标网站登录凭证是否有效
+   - 如果webdriver-manager下载失败，可能是网络问题
+
+4. **EdgeDriver相关问题**
+   - EdgeDriver现在自动管理，无需手动配置
+   - 如遇到版本不匹配问题，删除webdriver缓存目录重新下载
+   - 可通过设置`WDM_LOG_LEVEL=1`启用详细日志查看下载过程 

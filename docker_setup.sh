@@ -66,6 +66,10 @@ DUOWEI_SAVE_TO_FILE=False
 HEADLESS=True
 # Edge用户数据目录
 EDGE_USER_DATA_DIR=edge_user_data
+# webdriver-manager配置
+WDM_LOG_LEVEL=0
+WDM_SSL_VERIFY=0
+WDM_LOCAL=1
 # 添加浏览器类型环境变量
 SELENIUM_BROWSER=edge
 BROWSER_TYPE=edge
@@ -104,6 +108,15 @@ else
         echo "" >> .env
         echo "# Edge用户数据目录" >> .env
         echo "EDGE_USER_DATA_DIR=edge_user_data" >> .env
+    fi
+    
+    # 添加webdriver-manager配置
+    if ! grep -q "WDM_LOG_LEVEL" .env; then
+        echo "" >> .env
+        echo "# webdriver-manager配置" >> .env
+        echo "WDM_LOG_LEVEL=0" >> .env
+        echo "WDM_SSL_VERIFY=0" >> .env
+        echo "WDM_LOCAL=1" >> .env
     fi
     
     # 添加浏览器类型环境变量

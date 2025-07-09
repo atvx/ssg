@@ -4,6 +4,7 @@ from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.service import Service as EdgeService
 from seleniumwire import webdriver as wire_webdriver
+from webdriver_manager.microsoft import EdgeChromiumDriverManager
 import os
 import time
 import subprocess
@@ -355,71 +356,34 @@ def get_temp_dir():
     return temp_dir
 
 
-def init_chrome_driver(config, force_new_session=False):
-    """初始化Edge浏览器
-    
-    Args:
-        config: 配置字典
-        force_new_session (bool): 如果为True，不使用现有的用户数据目录
-    """
-    # 检查是否需要清理Edge进程（仅清理进程，不清理用户数据）
-    try:
-        # 使用优化的Edge清理工具，但只清理进程
-        from utils.chrome_cleanup import EdgeCleanup
-        cleaner = EdgeCleanup()
-        
-        # 如果Edge仍在运行，等待其退出
-        if cleaner.is_browser_running():
-            logger.info("检测到Edge进程正在运行，等待退出...")
-            cleaner.wait_for_browser_exit(timeout=3)
-        
-        # 只清理Edge进程，不清理用户数据
-        force_kill_processes(['msedge', 'msedgedriver', 'Microsoft Edge'])
-        
-        # 等待确保清理完成
-        time.sleep(1)
-    except Exception as e:
-        logger.warning(f"Edge进程清理时出现非关键错误: {e}")
-
-    # 多次尝试启动浏览器
+def init_edge_driver(config, force_new_session=False):
+    """初始化Edge浏览器"""
     max_attempts = 3
+    
     for attempt in range(max_attempts):
         try:
-            edge_options = EdgeOptions()
-            edge_options.add_argument("--no-sandbox")
-            edge_options.add_argument("--disable-dev-shm-usage")
-            edge_options.add_argument("--disable-gpu")
-            edge_options.add_argument("--window-size=1280,800")
+            # 清理已存在的进程
+            if force_new_session or attempt > 0:
+                logger.info("检测到Edge进程正在运行，等待退出...")
+                force_kill_processes(['msedge', 'msedgedriver', 'Microsoft Edge'])
+                time.sleep(3)
             
-            # 确定用户数据目录
-            user_data_dir = None
-            if force_new_session:
-                # 如果强制新会话，使用临时目录
-                user_data_dir = get_temp_dir()
-                logger.info("使用强制新会话模式，使用临时目录")
-            else:
-                # 优先使用配置中的用户数据目录
-                configured_dir = config.get("USER_DATA_DIR")
-                if configured_dir and os.path.exists(os.path.dirname(os.path.abspath(configured_dir))):
-                    user_data_dir = os.path.abspath(configured_dir)
-                    # 确保目录存在
-                    os.makedirs(user_data_dir, exist_ok=True)
-                    logger.info(f"使用配置的用户数据目录: {user_data_dir}")
-                else:
-                    # 配置目录不可用，使用临时目录
-                    user_data_dir = get_temp_dir()
-                    logger.warning(f"配置的用户数据目录不可用，使用临时目录: {user_data_dir}")
+            # 配置Edge选项
+            edge_options = EdgeOptions()
             
             # 设置用户数据目录
-            edge_options.add_argument(f"--user-data-dir={user_data_dir}")
+            user_data_dir = config.get("USER_DATA_DIR")
+            if user_data_dir:
+                if os.path.exists(user_data_dir):
+                    logger.info(f"使用配置的用户数据目录: {user_data_dir}")
+                    edge_options.add_argument(f"--user-data-dir={user_data_dir}")
+                else:
+                    logger.warning(f"用户数据目录不存在: {user_data_dir}")
             
-            # 添加以下代码，处理无头模式
+            # 配置无头模式
             if config.get("HEADLESS", False):
-                logger.info("启用无头模式运行Edge")
-                edge_options.add_argument("--headless=new")  # 使用新的headless模式
-                # 添加解决DevToolsActivePort问题的参数
-                edge_options.add_argument("--remote-debugging-port=9222")
-                edge_options.add_argument("--disable-dev-shm-usage")
+                edge_options.add_argument("--headless")
+                edge_options.add_argument("--disable-gpu")
                 edge_options.add_argument("--no-sandbox")
                 
                 # 禁用可能导致问题的功能
@@ -460,19 +424,13 @@ def init_chrome_driver(config, force_new_session=False):
             edge_options.add_argument("--disable-logging")
             edge_options.add_experimental_option('excludeSwitches', ['enable-automation', 'enable-logging'])
             
-            # 查找EdgeDriver路径
-            edgedriver_path = find_edgedriver()
-            if not edgedriver_path:
-                logger.error("无法找到EdgeDriver，请手动安装")
-                raise Exception("EdgeDriver未找到")
+            # 使用webdriver_manager自动下载和管理EdgeDriver
+            logger.info("正在检查并下载最新的EdgeDriver...")
+            driver_path = EdgeChromiumDriverManager().install()
+            logger.info(f"使用EdgeDriver: {driver_path}")
             
-            logger.info(f"使用EdgeDriver: {edgedriver_path}")
-            
-            # 设置服务超时参数
-            service = EdgeService(
-                executable_path=edgedriver_path,
-                log_path=os.devnull
-            )
+            # 设置服务
+            service = EdgeService(executable_path=driver_path)
             
             monitor_api = config.get("MONITOR_API_RESPONSE", False)
             
@@ -485,8 +443,6 @@ def init_chrome_driver(config, force_new_session=False):
                 
                 # 设置请求过滤范围
                 scopes = config.get("MONITOR_SCOPES", [r'.*pos\.meituan\.com.*'])
-                
-                logger.info(f"使用EdgeDriver: {edgedriver_path}")
                 
                 # 创建driver
                 logger.info("尝试启动Edge浏览器...")

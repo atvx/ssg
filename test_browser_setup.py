@@ -17,7 +17,7 @@ from core.meituan.browser import (
     find_chromedriver, 
     get_chrome_version,
     get_temp_dir,
-    init_chrome_driver
+    init_edge_driver
 )
 
 
@@ -102,7 +102,7 @@ def test_browser_initialization():
     
     try:
         print("正在初始化Edge浏览器...")
-        driver = init_chrome_driver(config)
+        driver = init_edge_driver(config)
         
         if driver:
             print("✅ Edge浏览器启动成功")

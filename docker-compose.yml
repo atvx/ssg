@@ -56,8 +56,11 @@ services:
       # 添加Selenium相关环境变量
       - PYTHONUNBUFFERED=1
       - SE_OPTS=--disable-dev-shm-usage
+      # webdriver-manager配置
       - WDM_LOG_LEVEL=0
       - WDM_SSL_VERIFY=0
+      - WDM_LOCAL=1
+      - WDM_PRINT_FIRST_LINE=False
       # JavaScript内存限制
       - NODE_OPTIONS=--max_old_space_size=2048
       # 添加Redis连接参数
@@ -152,6 +155,11 @@ services:
       - SELENIUM_HEADLESS=true
       # Edge用户数据目录
       - EDGE_USER_DATA_DIR=/app/edge_user_data
+      # webdriver-manager配置
+      - WDM_LOG_LEVEL=0
+      - WDM_SSL_VERIFY=0
+      - WDM_LOCAL=1
+      - WDM_PRINT_FIRST_LINE=False
       # 添加调试环境变量
       - SELENIUM_BROWSER=edge
       - BROWSER_TYPE=edge

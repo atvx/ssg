@@ -103,7 +103,7 @@ xattr -d com.apple.quarantine /path/to/msedgedriver
 创建一个简单的测试脚本验证配置：
 
 ```python
-from core.meituan.browser import init_chrome_driver
+from core.meituan.browser import init_edge_driver
 
 # 测试配置
 config = {
@@ -112,7 +112,7 @@ config = {
 }
 
 try:
-    driver = init_chrome_driver(config)
+    driver = init_edge_driver(config)
     print("✅ 浏览器启动成功")
     driver.get("https://www.google.com")
     print(f"✅ 页面加载成功: {driver.title}")

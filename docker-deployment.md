@@ -69,6 +69,15 @@ CELERY_RESULT_BACKEND=redis://Redis主机地址:6379/0
 
 # 安全配置
 SECRET_KEY=生成一个随机密钥
+
+# 浏览器配置
+HEADLESS=true
+EDGE_USER_DATA_DIR=/app/edge_user_data
+
+# webdriver-manager配置
+WDM_LOG_LEVEL=0
+WDM_SSL_VERIFY=0
+WDM_LOCAL=1
 ```
 
 ### 3. 项目构建与启动
@@ -104,9 +113,26 @@ docker-compose logs -f celery_worker
 
 ### 5. 注意事项
 
-#### Microsoft Edge浏览器和EdgeDriver
+#### Microsoft Edge浏览器和EdgeDriver管理
 
-本Dockerfile会自动安装ARM64架构的Microsoft Edge浏览器和对应版本的EdgeDriver。系统会自动下载与安装的Edge浏览器版本匹配的EdgeDriver。
+本系统现已集成自动EdgeDriver管理：
+
+- **自动安装**: 容器启动时会自动安装Microsoft Edge浏览器
+- **自动管理**: 使用`webdriver-manager`自动下载和管理EdgeDriver
+- **版本匹配**: 自动匹配Edge浏览器版本下载对应的EdgeDriver
+- **无需手动配置**: 无需手动下载或配置EdgeDriver路径
+
+#### webdriver-manager配置
+
+系统支持以下webdriver-manager配置选项：
+
+```yaml
+environment:
+  - WDM_LOG_LEVEL=0          # 日志级别（0=关闭详细日志）
+  - WDM_SSL_VERIFY=0         # 禁用SSL验证
+  - WDM_LOCAL=1              # 使用本地缓存
+  - WDM_PRINT_FIRST_LINE=False  # 不打印首行信息
+```
 
 #### 数据持久化
 
@@ -116,6 +142,8 @@ docker-compose logs -f celery_worker
 volumes:
   - ./edge_user_data:/app/edge_user_data
 ```
+
+EdgeDriver缓存也会自动持久化在容器的`~/.wdm`目录中。
 
 #### 网络配置
 
@@ -145,6 +173,9 @@ docker-compose logs
 # 进入容器
 docker-compose exec api bash
 docker-compose exec celery_worker bash
+
+# 清理webdriver-manager缓存（如果需要重新下载EdgeDriver）
+docker-compose exec api rm -rf ~/.wdm
 ```
 
 ### 7. 故障排除
@@ -160,11 +191,32 @@ docker-compose exec celery_worker bash
    - 查看容器日志
 
 3. **数据获取失败**
-   - 检查Edge和EdgeDriver是否正确安装
-   - 确认网络连接正常
+   - 检查Edge浏览器是否正确安装
+   - 确认网络连接正常（用于下载EdgeDriver）
    - 检查目标网站登录凭证是否有效
 
-4. **Celery任务不执行**
+4. **EdgeDriver相关问题**
+   - EdgeDriver现在自动管理，无需手动干预
+   - 如遇到版本不匹配，重启容器会自动重新下载
+   - 可通过设置`WDM_LOG_LEVEL=1`启用详细日志
+   - 网络问题导致下载失败时，检查防火墙和代理设置
+
+5. **Celery任务不执行**
    - 确认Redis连接正确
    - 检查Celery Worker是否正常运行
-   - 查看Celery日志以了解详情 
+   - 查看Celery日志以了解详情
+
+### 8. 性能优化建议
+
+1. **webdriver-manager缓存**
+   - 首次运行后EdgeDriver会被缓存，后续启动更快
+   - 可通过卷映射持久化缓存目录
+
+2. **浏览器性能**
+   - 无头模式减少资源消耗
+   - 自动禁用不必要的浏览器功能
+   - 优化内存使用设置
+
+3. **网络优化**
+   - 在内网环境中可设置代理加速下载
+   - 使用本地镜像仓库缓存Docker镜像 

@@ -12,7 +12,7 @@ from urllib.parse import urlencode, quote
 import re
 
 from core.meituan.auth import login_with_phone, login_with_account, select_organization, check_login, choose_organization
-from core.meituan.browser import init_chrome_driver
+from core.meituan.browser import init_edge_driver
 from core.meituan.navigation import navigate_to_business_overview, navigate_to_report_center, select_date
 from core.meituan.data import get_all_meituan_data, perform_advanced_search
 from utils.browser_utils import hide_all_popups, handle_iframe_slider, monitor_api_response
@@ -126,17 +126,17 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
         # 初始化浏览器，开启API监控
         # 创建一个包含所有参数的配置字典
         browser_config = {
-            "USER_DATA_DIR": settings.CHROME_USER_DATA_DIR,
+            "USER_DATA_DIR": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "edge_user_data"),
             "HEADLESS": settings.HEADLESS,
             "MONITOR_API_RESPONSE": True,
             "MONITOR_SCOPES": [".*pos\\.meituan\\.com.*"]  # 匹配所有美团POS域名下的请求
         }
         
         # 添加浏览器配置日志
-        logger.info(f"浏览器配置信息: HEADLESS={settings.HEADLESS}, USER_DATA_DIR={settings.CHROME_USER_DATA_DIR}")
+        logger.info(f"浏览器配置信息: HEADLESS={settings.HEADLESS}, USER_DATA_DIR={browser_config['USER_DATA_DIR']}")
         
         # 使用配置字典初始化浏览器
-        driver = init_chrome_driver(config=browser_config)
+        driver = init_edge_driver(config=browser_config)
         
         # 先访问美团登录页面
         driver.get(LOGIN_URL)
