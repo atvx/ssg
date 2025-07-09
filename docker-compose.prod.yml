@@ -1,0 +1,200 @@
+services:
+  api:
+    image: ssg-api:latest
+    container_name: ssg-api
+    restart: always
+    # 添加特权模式和必要的Linux capabilities
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - SYS_TIME
+    # 调整共享内存大小
+    shm_size: 8gb
+    # 优化资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '2.0'
+    security_opt:
+      - seccomp=unconfined
+    ports:
+      - "3400:8000"
+    volumes:
+      # 只挂载数据目录，不挂载源代码
+      - ./edge_user_data:/app/edge_user_data
+      - ./data:/app/data
+      # 添加/dev/shm卷映射
+      - /dev/shm:/dev/shm
+      # 临时目录映射到容器外部
+      - /tmp/edge_tmp:/tmp/edge_tmp
+      # 添加时间同步
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      - APP_NAME=销售数据获取系统
+      - DEBUG=False
+      - API_V1_STR=/api
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - SECRET_KEY=${SECRET_KEY}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+      # 美团账号相关配置
+      - MEITUAN_PHONE=${MEITUAN_PHONE}
+      - MEITUAN_ORG=${MEITUAN_ORG}
+      - MEITUAN_USERNAME=${MEITUAN_USERNAME}
+      - MEITUAN_PASSWORD=${MEITUAN_PASSWORD}
+      # 滑块验证和登录模式
+      - SLIDER_VERIFY_MODE=${SLIDER_VERIFY_MODE}
+      - LOGIN_MODE=${LOGIN_MODE}
+      # 添加Selenium相关环境变量
+      - PYTHONUNBUFFERED=1
+      - SE_OPTS=--disable-dev-shm-usage
+      # webdriver-manager配置
+      - WDM_LOG_LEVEL=0
+      - WDM_SSL_VERIFY=0
+      - WDM_LOCAL=1
+      - WDM_PRINT_FIRST_LINE=False
+      # JavaScript内存限制
+      - NODE_OPTIONS=--max_old_space_size=2048
+      # 添加Redis连接参数
+      - REDIS_SOCKET_TIMEOUT=${REDIS_SOCKET_TIMEOUT}
+      - REDIS_SOCKET_CONNECT_TIMEOUT=${REDIS_SOCKET_CONNECT_TIMEOUT}
+      - REDIS_SOCKET_KEEPALIVE=${REDIS_SOCKET_KEEPALIVE}
+      - REDIS_RETRY_ON_TIMEOUT=${REDIS_RETRY_ON_TIMEOUT}
+      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
+      # 增加Celery的超时设置
+      - CELERY_TASK_TIME_LIMIT=600
+      - CELERY_TASK_SOFT_TIME_LIMIT=500
+      - CELERY_BROKER_CONNECTION_TIMEOUT=${CELERY_BROKER_CONNECTION_TIMEOUT}
+      - CELERY_BROKER_CONNECTION_MAX_RETRIES=${CELERY_BROKER_CONNECTION_MAX_RETRIES}
+      - CELERY_BROKER_HEARTBEAT=${CELERY_BROKER_HEARTBEAT}
+      - CELERY_BROKER_POOL_LIMIT=${CELERY_BROKER_POOL_LIMIT}
+      - CELERY_VISIBILITY_TIMEOUT=${CELERY_VISIBILITY_TIMEOUT}
+      - TZ=Asia/Shanghai
+      # 添加hostname固定值
+      - CELERY_HOSTNAME=ssg-api
+      # 新增：日报导出相关环境变量
+      - LIBREOFFICE_PATH=/usr/bin/libreoffice
+      - POPPLER_PATH=/usr/bin
+      # Edge配置
+      - EDGE_HEADLESS=true
+      - SELENIUM_HEADLESS=true
+      # Edge用户数据目录
+      - EDGE_USER_DATA_DIR=/app/edge_user_data
+      # 文件上传配置 - 使用本地模式
+      - UPLOAD_DRIVER=local
+      - APP_DOMAIN=http://localhost:3400
+      - MEDIA_PREFIX=/images
+      # 添加调试环境变量
+      - SELENIUM_BROWSER=edge
+      - BROWSER_TYPE=edge
+      - USE_EDGE=true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks:
+      - ssg-network
+    # 添加健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ping", "--max-time", "15"]
+      interval: 180s
+      timeout: 30s
+      retries: 3
+      start_period: 300s
+
+  celery_worker:
+    image: ssg-api:latest
+    container_name: ssg-celery-worker
+    restart: always
+    # 添加特权模式和必要的Linux capabilities
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - SYS_TIME
+    # 调整共享内存大小
+    shm_size: 8gb
+    # 优化资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '2.0'
+    security_opt:
+      - seccomp=unconfined
+    volumes:
+      # 只挂载数据目录，不挂载源代码
+      - ./edge_user_data:/app/edge_user_data
+      - ./data:/app/data
+      # 添加/dev/shm卷映射
+      - /dev/shm:/dev/shm
+      # 临时目录映射到容器外部
+      - /tmp/edge_tmp:/tmp/edge_tmp
+      # 添加时间同步
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      # 从.env文件读取数据库和Redis配置
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      # Redis连接参数
+      - REDIS_SOCKET_TIMEOUT=${REDIS_SOCKET_TIMEOUT}
+      - REDIS_SOCKET_CONNECT_TIMEOUT=${REDIS_SOCKET_CONNECT_TIMEOUT}
+      - REDIS_SOCKET_KEEPALIVE=${REDIS_SOCKET_KEEPALIVE}
+      - REDIS_RETRY_ON_TIMEOUT=${REDIS_RETRY_ON_TIMEOUT}
+      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
+      # Celery连接参数
+      - CELERY_BROKER_CONNECTION_TIMEOUT=${CELERY_BROKER_CONNECTION_TIMEOUT}
+      - CELERY_BROKER_CONNECTION_MAX_RETRIES=${CELERY_BROKER_CONNECTION_MAX_RETRIES}
+      - CELERY_BROKER_HEARTBEAT=${CELERY_BROKER_HEARTBEAT}
+      - CELERY_BROKER_POOL_LIMIT=${CELERY_BROKER_POOL_LIMIT}
+      - CELERY_VISIBILITY_TIMEOUT=${CELERY_VISIBILITY_TIMEOUT}
+      # Edge配置
+      - EDGE_HEADLESS=true
+      - SELENIUM_HEADLESS=true
+      # Edge用户数据目录
+      - EDGE_USER_DATA_DIR=/app/edge_user_data
+      # webdriver-manager配置
+      - WDM_LOG_LEVEL=0
+      - WDM_SSL_VERIFY=0
+      - WDM_LOCAL=1
+      - WDM_PRINT_FIRST_LINE=False
+      # 美团账号相关配置
+      - MEITUAN_PHONE=${MEITUAN_PHONE}
+      - MEITUAN_ORG=${MEITUAN_ORG}
+      - MEITUAN_USERNAME=${MEITUAN_USERNAME}
+      - MEITUAN_PASSWORD=${MEITUAN_PASSWORD}
+      # 滑块验证和登录模式
+      - SLIDER_VERIFY_MODE=${SLIDER_VERIFY_MODE}
+      - LOGIN_MODE=${LOGIN_MODE}
+      # 添加调试环境变量
+      - SELENIUM_BROWSER=edge
+      - BROWSER_TYPE=edge
+      - USE_EDGE=true
+    # 覆盖Dockerfile的CMD来启动Celery worker
+    command: >
+      bash -c "
+      celery -A celery_app.celery worker
+      --loglevel=INFO
+      --concurrency=2
+      --max-tasks-per-child=100
+      --prefetch-multiplier=1
+      --time-limit=900
+      --soft-time-limit=600
+      --without-heartbeat
+      --without-gossip
+      --without-mingle"
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - ssg-network
+
+networks:
+  ssg-network:
+    driver: bridge 
