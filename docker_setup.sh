@@ -222,17 +222,12 @@ else
     echo "没有发现运行中的容器..."
 fi
 
-# 更新docker-compose.yml文件中的命令
-echo "更新容器命令，确保安装正确的依赖..."
+# 检查docker-compose.yml文件
+echo "检查docker-compose.yml配置..."
 # 备份原始文件
 cp docker-compose.yml docker-compose.yml.bak
 
-# 更新API容器命令
-sed -i 's/command: >.*pip install backoff==2.2.1 urllib3==2.5.0/command: >\\n      bash -c "\\n      pip install setuptools==68.2.2 urllib3>=2.5.0 --root-user-action=ignore/g' docker-compose.yml
-
-# 更新Celery Worker容器命令
-sed -i 's/command: >.*sleep 60/command: >\\n      bash -c "\\n      sleep 60/g' docker-compose.yml
-sed -i 's/pip install backoff==2.2.1 urllib3==2.5.0/pip install setuptools==68.2.2 urllib3>=2.5.0/g' docker-compose.yml
+echo "跳过文件更新，使用现有的docker-compose.yml配置"
 
 # 强制重建镜像
 echo "构建Docker镜像..."
