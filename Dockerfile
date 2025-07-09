@@ -35,6 +35,7 @@ RUN pip install --no-cache-dir --root-user-action=ignore --upgrade pip \
     && pip install --no-cache-dir --root-user-action=ignore \
        --find-links https://pypi.tuna.tsinghua.edu.cn/simple/ \
        --timeout 60 \
+       setuptools==68.2.2 \
        -r requirements.txt \
     && pip install --no-cache-dir --root-user-action=ignore \
        selenium-wire pyvirtualdisplay retry timeout-decorator requests-toolbelt tenacity \
