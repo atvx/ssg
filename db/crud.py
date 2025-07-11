@@ -964,79 +964,91 @@ def find_daily_sales_data(db: Session, query_date: str) -> List[Dict[str, Any]]:
 
 def get_weekly_stats_data(
     db: Session, 
-    this_week_start: str, 
-    this_week_end: str,
-    last_week_start: str, 
-    last_week_end: str
+    query_date: str
 ) -> List[Dict[str, Any]]:
     """
     获取周度统计数据
     
     Args:
         db: 数据库会话
-        this_week_start: 本周开始日期 (YYYY-MM-DD)
-        this_week_end: 本周结束日期 (YYYY-MM-DD) 
-        last_week_start: 上周开始日期 (YYYY-MM-DD)
-        last_week_end: 上周结束日期 (YYYY-MM-DD)
+        query_date: 查询日期 (YYYY-MM-DD)，函数将自动计算所在周的本周和上周范围
         
     Returns:
         List[Dict]: 周度统计数据列表
     """
     try:
-        # 构建周度统计SQL查询
+        # 构建优化后的周度统计SQL查询
         sql_query = text("""
-        -- 本周
-        WITH this_week AS (
+        -- 优化后的SQL查询 - 只需传入一个日期参数 :query_date
+        WITH date_ranges AS (
+            SELECT 
+                -- 计算本周开始日期（周一）
+                DATE_SUB(:query_date, INTERVAL WEEKDAY(:query_date) DAY) AS this_week_start,
+                -- 计算本周结束日期（周日）
+                DATE_ADD(DATE_SUB(:query_date, INTERVAL WEEKDAY(:query_date) DAY), INTERVAL 6 DAY) AS this_week_end,
+                -- 计算上周开始日期（上周一）
+                DATE_SUB(DATE_SUB(:query_date, INTERVAL WEEKDAY(:query_date) DAY), INTERVAL 7 DAY) AS last_week_start,
+                -- 计算上周结束日期（上周日）
+                DATE_SUB(DATE_SUB(:query_date, INTERVAL WEEKDAY(:query_date) DAY), INTERVAL 1 DAY) AS last_week_end,
+                -- 提取年份和月份用于sales_target查询
+                DATE_FORMAT(:query_date, '%Y') AS query_year,
+                DATE_FORMAT(:query_date, '%m') AS query_month
+        ),
+        -- 本周数据
+        this_week AS (
             SELECT
                 c.id,
-                ROUND(SUM(s.income_amt), 0) AS sales,
-                SUM(s.sales_cart_count) AS cart
+                COALESCE(SUM(s.income_amt), 0) AS sales,
+                COALESCE(SUM(s.sales_cart_count), 0) AS cart
             FROM orgs c
-            LEFT JOIN sales_records s ON s.warehouse_name = c.name AND s.date BETWEEN :this_week_start AND :this_week_end
+            LEFT JOIN sales_records s ON s.warehouse_name = c.name 
+            CROSS JOIN date_ranges dr
             WHERE c.org_type = 3 AND c.status = 1
+            AND (s.date IS NULL OR s.date BETWEEN dr.this_week_start AND dr.this_week_end)
             GROUP BY c.id
         ),
-        -- 上周
+        -- 上周数据
         last_week AS (
             SELECT
                 c.id,
-                ROUND(SUM(s.income_amt), 0) AS sales,
-                SUM(s.sales_cart_count) AS cart
+                COALESCE(SUM(s.income_amt), 0) AS sales,
+                COALESCE(SUM(s.sales_cart_count), 0) AS cart
             FROM orgs c
-            LEFT JOIN sales_records s ON s.warehouse_name = c.name AND s.date BETWEEN :last_week_start AND :last_week_end
+            LEFT JOIN sales_records s ON s.warehouse_name = c.name 
+            CROSS JOIN date_ranges dr
             WHERE c.org_type = 3 AND c.status = 1
+            AND (s.date IS NULL OR s.date BETWEEN dr.last_week_start AND dr.last_week_end)
             GROUP BY c.id
         ) 
         SELECT
             c.name,
             t.car_count,
-            IFNULL(tw.sales, 0) AS this_week_sales,
-            IFNULL(lw.sales, 0) AS last_week_sales,
-            ROUND((IFNULL(tw.sales, 0) - IFNULL(lw.sales, 0)) / NULLIF(IFNULL(lw.sales, 0), 0) * 100, 1) AS sales_wow_pct,
-            ROUND(IFNULL(tw.sales, 0) / NULLIF(IFNULL(tw.cart, 0), 0), 0) AS this_week_avg,
-            ROUND(IFNULL(lw.sales, 0) / NULLIF(IFNULL(lw.cart, 0), 0), 0) AS last_week_avg,
-            ROUND(((IFNULL(tw.sales, 0) / NULLIF(IFNULL(tw.cart, 0), 0)) - (IFNULL(lw.sales, 0) / NULLIF(IFNULL(lw.cart, 0), 0))) / NULLIF((IFNULL(tw.sales, 0) / NULLIF(IFNULL(tw.cart, 0), 0)), 0) * 100, 1) AS avg_wow_pct,
-            IFNULL(tw.cart, 0) AS this_week_cart,
-            IFNULL(lw.cart, 0) AS last_week_cart,
-            ROUND((IFNULL(tw.cart, 0) - IFNULL(lw.cart, 0)) / NULLIF(IFNULL(lw.cart, 0), 0) * 100, 1) AS cart_wow_pct,
-            ROUND(IFNULL(tw.cart, 0) / 7, 0) AS this_daily_cart,
-            ROUND(IFNULL(lw.cart, 0) / 7, 0) AS last_daily_cart,
-            ROUND(((IFNULL(tw.cart, 0) / 7) - (IFNULL(lw.cart, 0) / 7)) / NULLIF(IFNULL(lw.cart, 0) / 7, 0) * 100, 1) AS daily_cart_wow_pct
+            COALESCE(tw.sales, 0) AS this_week_sales,
+            COALESCE(lw.sales, 0) AS last_week_sales,
+            ROUND((COALESCE(tw.sales, 0) - COALESCE(lw.sales, 0)) / NULLIF(COALESCE(lw.sales, 0), 0) * 100, 1) AS sales_wow_pct,
+            ROUND(COALESCE(tw.sales, 0) / NULLIF(COALESCE(tw.cart, 0), 0), 1) AS this_week_avg,
+            ROUND(COALESCE(lw.sales, 0) / NULLIF(COALESCE(lw.cart, 0), 0), 1) AS last_week_avg,
+            ROUND(((COALESCE(tw.sales, 0) / NULLIF(COALESCE(tw.cart, 0), 0)) - (COALESCE(lw.sales, 0) / NULLIF(COALESCE(lw.cart, 0), 0))) / NULLIF((COALESCE(lw.sales, 0) / NULLIF(COALESCE(lw.cart, 0), 0)), 0) * 100, 1) AS avg_wow_pct,
+            COALESCE(tw.cart, 0) AS this_week_cart,
+            COALESCE(lw.cart, 0) AS last_week_cart,
+            ROUND((COALESCE(tw.cart, 0) - COALESCE(lw.cart, 0)) / NULLIF(COALESCE(lw.cart, 0), 0) * 100, 1) AS cart_wow_pct,
+            ROUND(COALESCE(tw.cart, 0) / 7, 0) AS this_daily_cart,
+            ROUND(COALESCE(lw.cart, 0) / 7, 0) AS last_daily_cart,
+            ROUND(((COALESCE(tw.cart, 0) / 7) - (COALESCE(lw.cart, 0) / 7)) / NULLIF(COALESCE(lw.cart, 0) / 7, 0) * 100, 1) AS daily_cart_wow_pct
         FROM orgs c
         LEFT JOIN orgs p ON p.id = c.parent_id
         LEFT JOIN this_week tw ON tw.id = c.id
         LEFT JOIN last_week lw ON lw.id = c.id
-        LEFT JOIN sales_target t ON t.org_name = c.name
+        LEFT JOIN sales_target t ON t.org_name = c.name 
+        CROSS JOIN date_ranges dr
         WHERE c.org_type = 3 AND c.status = 1
+        AND (t.id IS NULL OR (t.year = dr.query_year AND t.month = dr.query_month))
         ORDER BY p.sort, c.sort;
         """)
         
         # 执行查询
         result = db.execute(sql_query, {
-            'this_week_start': this_week_start,
-            'this_week_end': this_week_end,
-            'last_week_start': last_week_start,
-            'last_week_end': last_week_end
+            'query_date': query_date
         })
         
         # 将结果转换为字典列表

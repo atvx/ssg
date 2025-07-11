@@ -171,7 +171,7 @@ class WeeklyStatsResponse(BaseModel):
     code: int = 200
     success: bool = True
     message: str = "获取周度统计数据成功"
-    data: Optional[WeeklyStatsData] = None
+    data: Optional[List[WeeklyStatsWarehouse]] = None
 
 
 class MonthlyStatsWarehouse(BaseModel):

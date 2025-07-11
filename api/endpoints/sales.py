@@ -855,7 +855,7 @@ def get_weekly_stats(
     - 本周和上周的销售对比数据，包括销售额、销售车数、平均收入等指标的同比增长
     """
     try:
-        from datetime import datetime, timedelta
+        from datetime import datetime
         
         # 处理日期参数
         if query_date:
@@ -877,60 +877,17 @@ def get_weekly_stats(
             target_date = datetime.now().date()
             logger.info(f"周度统计: 未提供日期参数，使用当前日期 {target_date}")
         
-        # 计算本周的周一和周日
-        def get_week_range(date):
-            """计算指定日期所在周的周一和周日"""
-            # 获取指定日期是周几 (0=Monday, 6=Sunday)
-            weekday = date.weekday()
-            
-            # 计算本周周一
-            monday = date - timedelta(days=weekday)
-            # 计算本周周日
-            sunday = monday + timedelta(days=6)
-            
-            return monday, sunday
-        
-        # 获取本周和上周的日期范围
-        this_monday, this_sunday = get_week_range(target_date)
-        last_monday = this_monday - timedelta(days=7)
-        last_sunday = this_sunday - timedelta(days=7)
-        
         # 转换为字符串格式
-        this_week_start = this_monday.strftime("%Y-%m-%d")
-        this_week_end = this_sunday.strftime("%Y-%m-%d")
-        last_week_start = last_monday.strftime("%Y-%m-%d")
-        last_week_end = last_sunday.strftime("%Y-%m-%d")
+        query_date_str = target_date.strftime("%Y-%m-%d")
         
-        logger.info(f"周度统计日期范围: 本周({this_week_start} ~ {this_week_end}), 上周({last_week_start} ~ {last_week_end})")
+        logger.info(f"周度统计查询日期: {query_date_str}，系统将自动计算本周和上周范围")
         
-        # 调用数据库查询函数
-        weekly_data = get_weekly_stats_data(
-            db, 
-            this_week_start, this_week_end,
-            last_week_start, last_week_end
-        )
-        
-        # 构建响应数据
-        response_data = {
-            "query_date": target_date.strftime("%Y-%m-%d"),
-            "date_ranges": {
-                "this_week": {
-                    "start": this_week_start,
-                    "end": this_week_end,
-                    "label": f"{this_week_start} ~ {this_week_end}"
-                },
-                "last_week": {
-                    "start": last_week_start,
-                    "end": last_week_end,
-                    "label": f"{last_week_start} ~ {last_week_end}"
-                }
-            },
-            "warehouses": weekly_data
-        }
+        # 调用优化后的数据库查询函数（只需传入一个日期参数）
+        weekly_data = get_weekly_stats_data(db, query_date_str)
         
         return create_success_response(
-            message=f"成功获取周度统计数据，查询日期: {target_date.strftime('%Y-%m-%d')}",
-            data=response_data
+            message=f"成功获取周度统计数据，查询日期: {query_date_str}",
+            data=weekly_data
         )
         
     except Exception as e:
