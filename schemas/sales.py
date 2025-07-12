@@ -138,6 +138,7 @@ class WeeklyStatsWarehouse(BaseModel):
     """仓库周度统计数据模型"""
     name: str = Field(..., description="仓库名称")
     car_count: Optional[int] = Field(None, description="车辆数量")
+    target_income: Optional[int] = Field(None, description="月度目标收入")
     this_week_sales: float = Field(..., description="本周销售额")
     last_week_sales: float = Field(..., description="上周销售额")
     sales_wow_pct: float = Field(..., description="销售额环比增长率(%)")

@@ -1023,6 +1023,7 @@ def get_weekly_stats_data(
         SELECT
             c.name,
             t.car_count,
+            CAST(t.target_income AS UNSIGNED) AS target_income,
             COALESCE(tw.sales, 0) AS this_week_sales,
             COALESCE(lw.sales, 0) AS last_week_sales,
             ROUND((COALESCE(tw.sales, 0) - COALESCE(lw.sales, 0)) / NULLIF(COALESCE(lw.sales, 0), 0) * 100, 1) AS sales_wow_pct,
@@ -1062,7 +1063,7 @@ def get_weekly_stats_data(
             # 处理None值和数值格式化
             for key, value in row_dict.items():
                 if value is None:
-                    if key in ['car_count', 'this_week_sales', 'last_week_sales', 'this_week_cart', 'last_week_cart', 
+                    if key in ['car_count', 'target_income', 'this_week_sales', 'last_week_sales', 'this_week_cart', 'last_week_cart', 
                               'this_week_avg', 'last_week_avg', 'this_daily_cart', 'last_daily_cart']:
                         row_dict[key] = 0
                     elif key in ['sales_wow_pct', 'avg_wow_pct', 'cart_wow_pct', 'daily_cart_wow_pct']:
