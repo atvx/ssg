@@ -385,10 +385,10 @@ def manual_download_edgedriver(version=None):
     
     # 如果没有指定版本，使用一个较新的稳定版本
     if not version:
-        version = "114.0.1823.58"  # 使用一个相对稳定的版本
+        version = "138.0.3351.83"  # 使用一个相对稳定的版本
     
-    # EdgeDriver下载URL
-    download_url = f"https://msedgedriver.azureedge.net/{version}/edgedriver_{platform_name}.zip"
+    # EdgeDriver下载URL：https://msedgedriver.microsoft.com/138.0.3351.83/edgedriver_linux64.zip
+    download_url = f"https://msedgedriver.microsoft.com/{version}/edgedriver_{platform_name}.zip"
     
     try:
         logger.info(f"正在手动下载EdgeDriver {version}，URL: {download_url}")
@@ -637,19 +637,54 @@ def get_edge_default_paths():
 
 
 def find_edgedriver():
-    """查找EdgeDriver可执行文件路径"""
-    # 获取系统默认路径
+    """查找EdgeDriver可执行文件路径，优先从core/browser目录查找压缩包"""
+    import zipfile
+    system, arch = get_platform_info()
+    # 1. 优先查找core/browser目录下的EdgeDriver压缩包
+    browser_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'browser')
+    if system == "mac":
+        if arch == "mac-arm64":
+            zip_name = "edgedriver_mac64_m1.zip"
+            driver_name = "msedgedriver"
+        else:
+            zip_name = "edgedriver_mac64_m1.zip"  # 只提供了m1包
+            driver_name = "msedgedriver"
+    elif system == "windows":
+        zip_name = "edgedriver_win64.zip"
+        driver_name = "msedgedriver.exe"
+    else:
+        zip_name = "edgedriver_linux64.zip"
+        driver_name = "msedgedriver"
+    zip_path = os.path.join(browser_dir, zip_name)
+    temp_extract_dir = os.path.join(tempfile.gettempdir(), "edgedriver_extract")
+    driver_path = os.path.join(temp_extract_dir, driver_name)
+    if os.path.exists(zip_path):
+        try:
+            os.makedirs(temp_extract_dir, exist_ok=True)
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                for item in zip_ref.namelist():
+                    if item.endswith(driver_name):
+                        zip_ref.extract(item, temp_extract_dir)
+                        # 兼容zip内有子目录
+                        extracted = os.path.join(temp_extract_dir, item)
+                        if os.path.exists(extracted):
+                            shutil.move(extracted, driver_path)
+                        break
+            if os.path.exists(driver_path):
+                if system != "windows":
+                    os.chmod(driver_path, 0o755)
+                logger.info(f"优先使用core/browser目录下的EdgeDriver: {driver_path}")
+                return driver_path
+        except Exception as e:
+            logger.warning(f"解压core/browser下EdgeDriver失败: {e}")
+    # 2. 原有本地路径查找
     paths = get_edge_default_paths()
-    
-    # 检查路径是否存在
     for path in paths:
         if os.path.exists(path):
             logger.info(f"找到EdgeDriver: {path}")
             return path
-    
-    # 尝试从PATH环境变量中查找
+    # 3. PATH环境变量查找
     try:
-        system, arch = get_platform_info()
         if system == "windows":
             result = subprocess.run(['where', 'msedgedriver'], 
                                   capture_output=True, text=True, encoding='utf-8', errors='ignore', check=False)
@@ -666,5 +701,9 @@ def find_edgedriver():
                     return path
     except Exception as e:
         logger.warning(f"从PATH查找EdgeDriver时出错: {e}")
-    
+    # 4. 全部找不到，自动下载
+    logger.info("未找到本地EdgeDriver，尝试手动下载...")
+    driver_path = manual_download_edgedriver()
+    if driver_path:
+        return driver_path
     return None 
