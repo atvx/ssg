@@ -16,6 +16,7 @@ import tarfile
 import shutil
 import logging
 from pathlib import Path
+import io
 
 from config.settings import settings
 from utils.file_utils import kill_chrome_processes, force_kill_processes
@@ -356,6 +357,73 @@ def get_temp_dir():
     return temp_dir
 
 
+def manual_download_edgedriver(version=None):
+    """手动下载EdgeDriver
+    
+    Args:
+        version: Edge浏览器版本，如果为None则尝试获取最新版本
+        
+    Returns:
+        下载的EdgeDriver路径，如果下载失败则返回None
+    """
+    system, arch = get_platform_info()
+    
+    # 创建目录存放下载的EdgeDriver
+    download_dir = os.path.join(os.path.expanduser("~"), ".wdm", "drivers", "edgedriver")
+    os.makedirs(download_dir, exist_ok=True)
+    
+    # 确定平台对应的下载URL
+    if system == "mac":
+        if arch == "arm64":
+            platform_name = "mac64_m1"
+        else:
+            platform_name = "mac64"
+    elif system == "windows":
+        platform_name = "win64"
+    else:  # Linux
+        platform_name = "linux64"
+    
+    # 如果没有指定版本，使用一个较新的稳定版本
+    if not version:
+        version = "114.0.1823.58"  # 使用一个相对稳定的版本
+    
+    # EdgeDriver下载URL
+    download_url = f"https://msedgedriver.azureedge.net/{version}/edgedriver_{platform_name}.zip"
+    
+    try:
+        logger.info(f"正在手动下载EdgeDriver {version}，URL: {download_url}")
+        
+        # 直接下载
+        response = requests.get(download_url, timeout=30)
+        response.raise_for_status()
+        
+        # 确定解压路径和可执行文件名
+        if system == "windows":
+            driver_name = "msedgedriver.exe"
+        else:
+            driver_name = "msedgedriver"
+        
+        driver_path = os.path.join(download_dir, driver_name)
+        
+        # 解压文件
+        with ZipFile(io.BytesIO(response.content)) as zip_file:
+            for item in zip_file.namelist():
+                if item.endswith(driver_name):
+                    with zip_file.open(item) as source, open(driver_path, "wb") as target:
+                        shutil.copyfileobj(source, target)
+        
+        # 设置执行权限
+        if system != "windows":
+            os.chmod(driver_path, 0o755)
+        
+        logger.info(f"EdgeDriver已下载并解压到: {driver_path}")
+        return driver_path
+        
+    except Exception as e:
+        logger.error(f"手动下载EdgeDriver失败: {e}")
+        return None
+
+
 def init_edge_driver(config, force_new_session=False):
     """初始化Edge浏览器"""
     max_attempts = 3
@@ -424,9 +492,33 @@ def init_edge_driver(config, force_new_session=False):
             edge_options.add_argument("--disable-logging")
             edge_options.add_experimental_option('excludeSwitches', ['enable-automation', 'enable-logging'])
             
-            # 使用webdriver_manager自动下载和管理EdgeDriver
-            logger.info("正在检查并下载最新的EdgeDriver...")
-            driver_path = EdgeChromiumDriverManager().install()
+            # 获取EdgeDriver路径
+            driver_path = None
+            
+            # 首先查找本地已有的EdgeDriver
+            driver_path = find_edgedriver()
+            
+            # 如果找不到本地Driver，尝试使用webdriver_manager下载
+            if not driver_path:
+                try:
+                    logger.info("正在检查并下载最新的EdgeDriver...")
+                    # 设置超时时间，避免长时间等待
+                    os.environ['WDM_TIMEOUT'] = '30'
+                    os.environ['WDM_SSL_VERIFY'] = '0'
+                    
+                    driver_path = EdgeChromiumDriverManager().install()
+                    logger.info(f"WebDriver Manager下载的EdgeDriver: {driver_path}")
+                except Exception as e:
+                    logger.warning(f"自动下载EdgeDriver失败: {e}")
+                    logger.info("尝试手动下载EdgeDriver...")
+                    
+                    # 尝试手动下载
+                    driver_path = manual_download_edgedriver()
+            
+            # 如果仍然无法获取EdgeDriver路径，则抛出异常
+            if not driver_path:
+                raise Exception("无法获取EdgeDriver路径，请手动下载并安装EdgeDriver")
+            
             logger.info(f"使用EdgeDriver: {driver_path}")
             
             # 设置服务
