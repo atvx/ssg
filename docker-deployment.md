@@ -1,222 +1,229 @@
-# Docker部署指南 - 销售数据获取系统
+# Docker 部署指南
 
-本指南详细说明如何在Ubuntu 22.04.5 LTS aarch64架构上使用Docker部署销售数据获取系统。
+本文档提供了使用 Docker 部署销售数据获取系统的详细步骤。
 
-## 环境需求
+## 系统架构
 
-- Ubuntu 22.04.5 LTS aarch64架构
-- Docker 20.10+ 和 Docker Compose v2.0+
-- 已有的MySQL服务
-- 已有的Redis服务
+系统由以下几个主要组件组成：
+
+1. **API 服务**：提供 RESTful API 接口，处理前端请求
+2. **Celery Worker**：处理异步任务，如数据抓取
+3. **Celery Beat**：定时任务调度器，负责按计划触发任务
+4. **Redis**：作为消息代理和结果后端
+5. **MySQL**：存储系统数据
+
+## 环境要求
+
+- Docker 20.10.0 或更高版本
+- Docker Compose 2.0.0 或更高版本
+- 至少 8GB RAM
+- 至少 20GB 可用磁盘空间
 
 ## 部署步骤
 
-### 1. 准备工作
+### 1. 准备环境变量文件
 
-确保服务器已安装Docker和Docker Compose：
+创建 `.env` 文件，包含以下环境变量：
+
+```
+# 数据库配置
+DATABASE_URL=mysql+pymysql://username:password@host:port/dbname
+
+# Redis配置
+REDIS_URL=redis://:password@host:port/0
+CELERY_BROKER_URL=redis://:password@host:port/0
+CELERY_RESULT_BACKEND=redis://:password@host:port/0
+
+# Redis连接参数
+REDIS_SOCKET_TIMEOUT=60
+REDIS_SOCKET_CONNECT_TIMEOUT=30
+REDIS_SOCKET_KEEPALIVE=True
+REDIS_RETRY_ON_TIMEOUT=True
+REDIS_MAX_CONNECTIONS=20
+
+# Celery连接参数
+CELERY_BROKER_CONNECTION_TIMEOUT=60
+CELERY_BROKER_CONNECTION_MAX_RETRIES=10
+CELERY_BROKER_HEARTBEAT=30
+CELERY_BROKER_POOL_LIMIT=10
+CELERY_VISIBILITY_TIMEOUT=43200
+
+# 美团账号配置
+MEITUAN_PHONE=your_phone
+MEITUAN_ORG=your_org
+MEITUAN_USERNAME=your_username
+MEITUAN_PASSWORD=your_password
+
+# 滑块验证和登录模式
+SLIDER_VERIFY_MODE=0
+LOGIN_MODE=1
+
+# 安全密钥
+SECRET_KEY=your_secret_key
+```
+
+### 2. 构建并启动容器
+
+对于生产环境，使用 `docker-compose.prod.yml`：
 
 ```bash
-# 更新软件包信息
-sudo apt-get update
-
-# 安装必要的依赖
-sudo apt-get install -y \
-    apt-transport-https \
-    ca-certificates \
-    curl \
-    gnupg \
-    lsb-release
-
-# 添加Docker官方GPG密钥
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-
-# 设置稳定版仓库
-echo \
-  "deb [arch=arm64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
-  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-# 安装Docker Engine
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-
-# 安装Docker Compose
-sudo apt-get install -y docker-compose-plugin
+docker-compose -f docker-compose.prod.yml up -d --build
 ```
 
-### 2. 创建环境变量文件
-
-在项目根目录创建`.env`文件：
+对于开发环境，使用 `docker-compose.yml`：
 
 ```bash
-# 复制模板文件
-cp .env.example .env
-
-# 编辑环境变量
-nano .env
+docker-compose up -d --build
 ```
 
-需要修改的关键环境变量：
-```
-# 数据库配置 - 填写现有MySQL的连接信息
-DATABASE_URL=mysql+pymysql://用户名:密码@MySQL主机地址:3306/数据库名
+### 3. 验证部署
 
-# Redis配置 - 填写现有Redis的连接信息
-REDIS_URL=redis://Redis主机地址:6379/0
-
-# Celery配置
-CELERY_BROKER_URL=redis://Redis主机地址:6379/0
-CELERY_RESULT_BACKEND=redis://Redis主机地址:6379/0
-
-# 安全配置
-SECRET_KEY=生成一个随机密钥
-
-# 浏览器配置
-HEADLESS=true
-EDGE_USER_DATA_DIR=/app/edge_user_data
-
-# webdriver-manager配置
-WDM_LOG_LEVEL=0
-WDM_SSL_VERIFY=0
-WDM_LOCAL=1
-```
-
-### 3. 项目构建与启动
-
-在项目根目录执行以下命令：
+检查所有容器是否正常运行：
 
 ```bash
-# 构建Docker镜像
-docker-compose build
-
-# 启动服务
-docker-compose up -d
+docker-compose -f docker-compose.prod.yml ps
 ```
 
-镜像构建可能需要一些时间，请耐心等待。建议使用`-d`参数以守护进程模式运行容器。
+应该看到 `api`、`celery_worker` 和 `celery_beat` 三个容器都处于 `Up` 状态。
 
-### 4. 验证部署
+### 4. 查看日志
 
-服务启动后，可通过以下方式验证：
+查看 API 服务日志：
 
 ```bash
-# 查看容器状态
-docker-compose ps
-
-# 查看API服务日志
-docker-compose logs -f api
-
-# 查看Celery Worker日志
-docker-compose logs -f celery_worker
+docker-compose -f docker-compose.prod.yml logs -f api
 ```
 
-访问API文档： http://服务器IP:8000/docs
-
-### 5. 注意事项
-
-#### Microsoft Edge浏览器和EdgeDriver管理
-
-本系统现已集成自动EdgeDriver管理：
-
-- **自动安装**: 容器启动时会自动安装Microsoft Edge浏览器
-- **自动管理**: 使用`webdriver-manager`自动下载和管理EdgeDriver
-- **版本匹配**: 自动匹配Edge浏览器版本下载对应的EdgeDriver
-- **无需手动配置**: 无需手动下载或配置EdgeDriver路径
-
-#### webdriver-manager配置
-
-系统支持以下webdriver-manager配置选项：
-
-```yaml
-environment:
-  - WDM_LOG_LEVEL=0          # 日志级别（0=关闭详细日志）
-  - WDM_SSL_VERIFY=0         # 禁用SSL验证
-  - WDM_LOCAL=1              # 使用本地缓存
-  - WDM_PRINT_FIRST_LINE=False  # 不打印首行信息
-```
-
-#### 数据持久化
-
-配置文件中已设置将`edge_user_data`目录挂载到容器中，确保浏览器会话数据能够持久化：
-
-```yaml
-volumes:
-  - ./edge_user_data:/app/edge_user_data
-```
-
-EdgeDriver缓存也会自动持久化在容器的`~/.wdm`目录中。
-
-#### 网络配置
-
-如果需要通过内部网络连接MySQL和Redis，可能需要调整网络配置：
-
-```yaml
-networks:
-  app-network:
-    driver: bridge
-  external-network:
-    external: true
-    name: existing-network-name
-```
-
-### 6. 管理命令
+查看 Celery Worker 日志：
 
 ```bash
-# 停止服务
-docker-compose down
-
-# 重启服务
-docker-compose restart
-
-# 查看服务日志
-docker-compose logs
-
-# 进入容器
-docker-compose exec api bash
-docker-compose exec celery_worker bash
-
-# 清理webdriver-manager缓存（如果需要重新下载EdgeDriver）
-docker-compose exec api rm -rf ~/.wdm
+docker-compose -f docker-compose.prod.yml logs -f celery_worker
 ```
 
-### 7. 故障排除
+查看 Celery Beat 日志：
 
-1. **镜像构建失败**
-   - 检查网络连接
-   - 确保有足够的存储空间
-   - 查看详细构建日志：`docker-compose build --progress=plain`
+```bash
+docker-compose -f docker-compose.prod.yml logs -f celery_beat
+```
 
-2. **服务无法启动**
-   - 检查环境变量配置
-   - 确保MySQL和Redis服务可访问
-   - 查看容器日志
+## 定时任务配置
 
-3. **数据获取失败**
-   - 检查Edge浏览器是否正确安装
-   - 确认网络连接正常（用于下载EdgeDriver）
-   - 检查目标网站登录凭证是否有效
+系统使用数据库存储定时任务配置，可以通过 API 接口或直接在数据库中管理。
 
-4. **EdgeDriver相关问题**
-   - EdgeDriver现在自动管理，无需手动干预
-   - 如遇到版本不匹配，重启容器会自动重新下载
-   - 可通过设置`WDM_LOG_LEVEL=1`启用详细日志
-   - 网络问题导致下载失败时，检查防火墙和代理设置
+### 默认定时任务
 
-5. **Celery任务不执行**
-   - 确认Redis连接正确
-   - 检查Celery Worker是否正常运行
-   - 查看Celery日志以了解详情
+系统启动时会自动创建以下默认定时任务：
 
-### 8. 性能优化建议
+1. **上午数据同步**：
+   - 时间段：6:00-12:00
+   - 频率：每半小时（0分和30分）
+   - 任务类型：全平台数据同步
 
-1. **webdriver-manager缓存**
-   - 首次运行后EdgeDriver会被缓存，后续启动更快
-   - 可通过卷映射持久化缓存目录
+2. **下午数据同步**：
+   - 时间段：12:00-23:59
+   - 频率：每5分钟
+   - 任务类型：全平台数据同步
 
-2. **浏览器性能**
-   - 无头模式减少资源消耗
-   - 自动禁用不必要的浏览器功能
-   - 优化内存使用设置
+### 定时任务配置说明
 
-3. **网络优化**
-   - 在内网环境中可设置代理加速下载
-   - 使用本地镜像仓库缓存Docker镜像 
+定时任务支持两种调度类型：
+
+1. **crontab**：基于 cron 表达式的定时调度
+   - 支持 `minute`, `hour`, `day_of_week`, `day_of_month`, `month_of_year` 字段
+   - 分钟字段支持以下格式：
+     - `*`：每分钟
+     - `*/5`：每5分钟（0, 5, 10, 15...）
+     - `0,30`：每小时的0分和30分
+
+2. **interval**：基于时间间隔的调度
+   - 使用 `interval_seconds` 字段指定间隔秒数
+
+### 注意事项
+
+- **crontab 类型**的任务在每个匹配的时间点都会执行，不会更新 `last_run_at` 字段
+- **interval 类型**的任务会更新 `last_run_at` 字段，下次执行时间为 `last_run_at + interval_seconds`
+- 所有任务都可以设置 `start_time` 和 `end_time` 限制执行时间段
+
+## 故障排除
+
+### 定时任务不执行
+
+1. 检查 Celery Beat 容器是否正常运行：
+   ```bash
+   docker-compose -f docker-compose.prod.yml ps celery_beat
+   ```
+
+2. 检查 Celery Beat 日志：
+   ```bash
+   docker-compose -f docker-compose.prod.yml logs -f celery_beat
+   ```
+
+3. 检查数据库中的调度配置是否正确：
+   ```sql
+   SELECT * FROM task_schedule_configs WHERE enabled = 1;
+   ```
+
+4. 检查 crontab 类型任务的 `last_run_at` 字段是否为 NULL：
+   ```sql
+   SELECT id, name, schedule_type, last_run_at FROM task_schedule_configs WHERE schedule_type = 'crontab';
+   ```
+   如果不为 NULL，需要手动清除：
+   ```sql
+   UPDATE task_schedule_configs SET last_run_at = NULL WHERE schedule_type = 'crontab';
+   ```
+
+### 任务执行失败
+
+1. 检查 Celery Worker 日志：
+   ```bash
+   docker-compose -f docker-compose.prod.yml logs -f celery_worker
+   ```
+
+2. 检查任务执行记录：
+   ```sql
+   SELECT * FROM tasks ORDER BY created_at DESC LIMIT 10;
+   ```
+
+## 维护操作
+
+### 重启服务
+
+重启所有服务：
+
+```bash
+docker-compose -f docker-compose.prod.yml restart
+```
+
+重启特定服务：
+
+```bash
+docker-compose -f docker-compose.prod.yml restart api
+docker-compose -f docker-compose.prod.yml restart celery_worker
+docker-compose -f docker-compose.prod.yml restart celery_beat
+```
+
+### 更新系统
+
+1. 拉取最新代码：
+   ```bash
+   git pull
+   ```
+
+2. 重新构建并启动容器：
+   ```bash
+   docker-compose -f docker-compose.prod.yml up -d --build
+   ```
+
+### 备份数据
+
+备份数据库：
+
+```bash
+docker exec -it $(docker-compose -f docker-compose.prod.yml ps -q db) mysqldump -u username -p dbname > backup.sql
+```
+
+备份 Redis 数据：
+
+```bash
+docker exec -it $(docker-compose -f docker-compose.prod.yml ps -q redis) redis-cli -a password SAVE
+``` 

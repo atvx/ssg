@@ -195,6 +195,49 @@ services:
     networks:
       - ssg-network
 
+  celery_beat:
+    image: ssg-api:latest
+    container_name: ssg-celery-beat
+    restart: always
+    volumes:
+      # 挂载数据目录
+      - ./data:/app/data
+      # 添加日志目录
+      - ./logs:/app/logs
+      # 添加时间同步
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      # 从.env文件读取数据库和Redis配置
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      # Redis连接参数
+      - REDIS_SOCKET_TIMEOUT=${REDIS_SOCKET_TIMEOUT}
+      - REDIS_SOCKET_CONNECT_TIMEOUT=${REDIS_SOCKET_CONNECT_TIMEOUT}
+      - REDIS_SOCKET_KEEPALIVE=${REDIS_SOCKET_KEEPALIVE}
+      - REDIS_RETRY_ON_TIMEOUT=${REDIS_RETRY_ON_TIMEOUT}
+      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
+      # Celery连接参数
+      - CELERY_BROKER_CONNECTION_TIMEOUT=${CELERY_BROKER_CONNECTION_TIMEOUT}
+      - CELERY_BROKER_CONNECTION_MAX_RETRIES=${CELERY_BROKER_CONNECTION_MAX_RETRIES}
+      - CELERY_BROKER_HEARTBEAT=${CELERY_BROKER_HEARTBEAT}
+      - CELERY_BROKER_POOL_LIMIT=${CELERY_BROKER_POOL_LIMIT}
+      - CELERY_VISIBILITY_TIMEOUT=${CELERY_VISIBILITY_TIMEOUT}
+      - TZ=Asia/Shanghai
+    # 覆盖Dockerfile的CMD来启动Celery beat
+    command: >
+      bash -c "
+      celery -A celery_app.celery beat
+      --loglevel=INFO
+      --scheduler=celery.beat.PersistentScheduler
+      --max-interval=60"
+    depends_on:
+      - celery_worker
+    networks:
+      - ssg-network
+
 networks:
   ssg-network:
     driver: bridge 

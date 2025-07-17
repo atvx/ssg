@@ -459,7 +459,7 @@ def auto_sync_data():
     current_day_of_month = now.day
     current_month = now.month
     
-    logger.info(f"当前时间: {now.strftime('%Y-%m-%d %H:%M:%S')}, 分钟: {current_minute}, 小时: {current_hour}")
+    logger.info(f"当前时间: {now.strftime('%Y-%m-%d %H:%M:%S')}, 分钟: {current_minute}, 小时: {current_hour}, 星期: {current_day_of_week}, 日: {current_day_of_month}, 月: {current_month}")
     
     # 创建数据库会话
     db = SessionLocal()
@@ -470,6 +470,16 @@ def auto_sync_data():
         if not enabled_configs:
             logger.info("没有找到启用的调度配置，跳过执行")
             return {"status": "skipped", "message": "No enabled schedule configs found"}
+        
+        logger.info(f"找到 {len(enabled_configs)} 个启用的调度配置")
+        for idx, config in enumerate(enabled_configs):
+            logger.info(f"配置 {idx+1}: ID={config.id}, 名称='{config.name}', 类型={config.schedule_type}, 任务={config.task_type}, 上次执行={config.last_run_at}")
+            if config.schedule_type == "crontab":
+                logger.info(f"  Crontab配置: 分钟={config.minute}, 小时={config.hour}, 星期={config.day_of_week}, 日={config.day_of_month}, 月={config.month_of_year}")
+            elif config.schedule_type == "interval":
+                logger.info(f"  Interval配置: 间隔={config.interval_seconds}秒")
+            if config.start_time and config.end_time:
+                logger.info(f"  时间段限制: {config.start_time} - {config.end_time}")
         
         executed_tasks = []
         
@@ -494,6 +504,7 @@ def auto_sync_data():
                 minute_match = False
                 if config.minute == "*":
                     minute_match = True
+                    logger.info(f"分钟通配符匹配: 当前分钟 {current_minute}, 配置为 '*', 匹配成功")
                 elif "," in config.minute:
                     # 处理逗号分隔的值
                     minute_values = config.minute.split(",")
@@ -541,6 +552,7 @@ def auto_sync_data():
                     # 处理单个值
                     try:
                         minute_match = current_minute == int(config.minute)
+                        logger.info(f"分钟单值匹配: 当前分钟 {current_minute}, 配置值 {config.minute}, 匹配结果: {minute_match}")
                     except ValueError:
                         minute_match = False
                 
@@ -548,9 +560,18 @@ def auto_sync_data():
                 hour_match = False
                 if config.hour == "*":
                     hour_match = True
+                    logger.info(f"小时通配符匹配: 当前小时 {current_hour}, 配置为 '*', 匹配成功")
                 elif "," in config.hour:
                     # 处理逗号分隔的值
-                    hour_match = str(current_hour) in config.hour.split(",")
+                    hour_values = config.hour.split(",")
+                    try:
+                        hour_values_int = [int(h.strip()) for h in hour_values]
+                        hour_match = current_hour in hour_values_int
+                        logger.info(f"小时列表匹配: 当前小时 {current_hour}, 小时列表 {hour_values_int}, 匹配结果: {hour_match}")
+                    except ValueError:
+                        # 如果转换失败，回退到字符串比较
+                        hour_match = str(current_hour) in hour_values
+                        logger.info(f"小时字符串列表匹配: 当前小时 {current_hour}, 小时列表 {hour_values}, 匹配结果: {hour_match}")
                 elif "-" in config.hour:
                     # 处理范围值，如 "6-11"
                     try:
@@ -563,6 +584,7 @@ def auto_sync_data():
                     # 处理单个值
                     try:
                         hour_match = current_hour == int(config.hour)
+                        logger.info(f"小时单值匹配: 当前小时 {current_hour}, 配置值 {config.hour}, 匹配结果: {hour_match}")
                     except ValueError:
                         hour_match = False
                 
@@ -571,6 +593,9 @@ def auto_sync_data():
                 day_of_month_match = config.day_of_month == "*"
                 month_of_year_match = config.month_of_year == "*"
                 
+                # 记录其他时间字段匹配情况
+                logger.info(f"其他时间字段匹配: 星期({day_of_week_match}), 日期({day_of_month_match}), 月份({month_of_year_match})")
+                
                 # 最终匹配结果
                 crontab_match = minute_match and hour_match and day_of_week_match and day_of_month_match and month_of_year_match
                 
@@ -578,6 +603,8 @@ def auto_sync_data():
                     logger.info(f"配置 '{config.name}' 的crontab表达式不匹配当前时间，跳过执行")
                     logger.info(f"匹配详情: 分钟({minute_match}), 小时({hour_match}), 星期({day_of_week_match}), 日期({day_of_month_match}), 月份({month_of_year_match})")
                     should_execute = False
+                else:
+                    logger.info(f"配置 '{config.name}' 的crontab表达式匹配当前时间，准备执行")
             
             elif should_execute and config.schedule_type == "interval":
                 # 对于interval类型，检查上次执行时间是否已经过了指定的间隔
@@ -586,6 +613,10 @@ def auto_sync_data():
                     if elapsed_seconds < config.interval_seconds:
                         logger.info(f"配置 '{config.name}' 的间隔时间未到，上次执行: {config.last_run_at}，间隔: {config.interval_seconds}秒，已过: {elapsed_seconds}秒，跳过执行")
                         should_execute = False
+                    else:
+                        logger.info(f"配置 '{config.name}' 的间隔时间已到，上次执行: {config.last_run_at}，间隔: {config.interval_seconds}秒，已过: {elapsed_seconds}秒，准备执行")
+                else:
+                    logger.info(f"配置 '{config.name}' 首次执行，无上次执行时间记录")
             
             # 如果通过了所有检查，执行任务
             if should_execute:
@@ -661,6 +692,8 @@ def auto_sync_data():
             }
     except Exception as e:
         logger.error(f"执行自动数据同步定时任务失败: {str(e)}")
+        import traceback
+        logger.error(f"错误详情: {traceback.format_exc()}")
         return {"status": "error", "error": str(e)}
     finally:
         # 确保关闭数据库连接
@@ -729,14 +762,14 @@ def init_default_schedule_configs():
             enabled=True
         )
         
-        # 创建下午配置（每10分钟执行一次）
+        # 创建下午配置（每5分钟执行一次）
         afternoon_config = TaskScheduleConfigCreate(
             name="下午数据同步",
             description="下午12:00-23:59每5分钟同步一次全平台数据",
             task_type="fetch_all",
             schedule_type="crontab",
             minute="*/5",  # 每5分钟执行一次
-            hour="12-23",               # 12点到23点
+            hour="12-23",  # 12点到23点
             start_time="12:00:00",
             end_time="23:59:59",
             enabled=True

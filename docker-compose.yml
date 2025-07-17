@@ -179,6 +179,52 @@ services:
     networks:
       - ssg-network
 
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ssg-api:latest
+    container_name: ssg-celery-beat
+    restart: always
+    volumes:
+      - ./:/app
+      # 添加数据目录
+      - ./data:/app/data
+      # 添加日志目录
+      - ./logs:/app/logs
+      # 添加时间同步
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      # Redis连接参数
+      - REDIS_SOCKET_TIMEOUT=60
+      - REDIS_SOCKET_CONNECT_TIMEOUT=30
+      - REDIS_SOCKET_KEEPALIVE=True
+      - REDIS_RETRY_ON_TIMEOUT=True
+      - REDIS_MAX_CONNECTIONS=20
+      # Celery连接参数
+      - CELERY_BROKER_CONNECTION_TIMEOUT=60
+      - CELERY_BROKER_CONNECTION_MAX_RETRIES=10
+      - CELERY_BROKER_HEARTBEAT=30
+      - CELERY_BROKER_POOL_LIMIT=10
+      - CELERY_VISIBILITY_TIMEOUT=43200
+      - TZ=Asia/Shanghai
+    # 覆盖Dockerfile的CMD来启动Celery beat
+    command: >
+      bash -c "
+      celery -A celery_app.celery beat
+      --loglevel=INFO
+      --scheduler=celery.beat.PersistentScheduler
+      --max-interval=60"
+    depends_on:
+      - celery_worker
+    networks:
+      - ssg-network
+
 networks:
   ssg-network:
     driver: bridge 
