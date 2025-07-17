@@ -33,6 +33,7 @@ class ErrorType(str, Enum):
     VALIDATION_ERROR = "VALIDATION_ERROR"
     AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
     AUTHORIZATION_ERROR = "AUTHORIZATION_ERROR"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
     RESOURCE_ERROR = "RESOURCE_ERROR"
     DATABASE_ERROR = "DATABASE_ERROR"
     SERVER_ERROR = "SERVER_ERROR"
@@ -51,6 +52,14 @@ class ErrorInfo(BaseModel):
     details: List[ErrorDetail] = []
 
 
+# 基础响应模型 (用于API接口返回)
+class ResponseBase(BaseModel):
+    code: int = Field(200, description="HTTP状态码")
+    success: bool = Field(True, description="操作是否成功")
+    message: str = Field(..., description="响应消息")
+    data: Optional[Dict[str, Any]] = Field(None, description="响应数据")
+
+
 # 通用响应模型
 class APIResponse(BaseModel, Generic[T]):
     code: int = Field(200, description="HTTP状态码")
@@ -64,4 +73,38 @@ class APIResponse(BaseModel, Generic[T]):
             # 自定义编码器，如有需要
         },
         "exclude_none": True  # 排除None值
+    }
+
+
+# 创建成功响应
+def create_success_response(message: str, data: Any = None) -> Dict[str, Any]:
+    return {
+        "success": True,
+        "code": 200,
+        "message": message,
+        "data": data
+    }
+
+
+# 创建错误响应
+def create_error_response(
+    message: str,
+    error_type: ErrorType,
+    code: int = 400,
+    details: List[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    error_details = []
+    if details:
+        for detail in details:
+            error_details.append(ErrorDetail(**detail))
+    
+    return {
+        "success": False,
+        "code": code,
+        "message": message,
+        "error": {
+            "type": error_type,
+            "details": error_details or []
+        },
+        "data": None
     } 

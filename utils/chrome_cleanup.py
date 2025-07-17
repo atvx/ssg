@@ -11,6 +11,7 @@ import logging
 import shutil
 import glob
 from pathlib import Path
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -173,3 +174,100 @@ class EdgeCleanup(BrowserCleanup):
     def is_chrome_running(self):
         """兼容旧接口，检查浏览器进程是否在运行"""
         return self.is_browser_running() 
+
+
+class ChromeCleanup:
+    """Chrome浏览器清理工具类"""
+    
+    @staticmethod
+    def clean_chrome_temp_files(chrome_user_data_dir: str) -> None:
+        """清理Chrome浏览器的临时文件
+        
+        Args:
+            chrome_user_data_dir: Chrome用户数据目录路径
+        """
+        if not os.path.exists(chrome_user_data_dir):
+            logger.warning(f"Chrome用户数据目录不存在: {chrome_user_data_dir}")
+            return
+        
+        # 需要清理的目录和文件模式
+        patterns_to_clean = [
+            os.path.join(chrome_user_data_dir, "*", "Cache", "*"),
+            os.path.join(chrome_user_data_dir, "*", "Code Cache", "*"),
+            os.path.join(chrome_user_data_dir, "*", "GPUCache", "*"),
+            os.path.join(chrome_user_data_dir, "*", "Service Worker", "CacheStorage", "*"),
+            os.path.join(chrome_user_data_dir, "*", "Service Worker", "ScriptCache", "*"),
+            os.path.join(chrome_user_data_dir, "*", "Application Cache", "*"),
+            os.path.join(chrome_user_data_dir, "*", "JumpListIconsRecentClosed", "*"),
+            os.path.join(chrome_user_data_dir, "*", "JumpListIconsTopSites", "*"),
+            os.path.join(chrome_user_data_dir, "*", "Network", "Cookies"),
+            os.path.join(chrome_user_data_dir, "*", "Network", "Cookies-journal"),
+            os.path.join(chrome_user_data_dir, "*", "*.tmp"),
+            os.path.join(chrome_user_data_dir, "*", "*.log"),
+        ]
+        
+        # 遍历并清理文件
+        for pattern in patterns_to_clean:
+            try:
+                files = glob.glob(pattern)
+                for file_path in files:
+                    try:
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                        elif os.path.isdir(file_path):
+                            shutil.rmtree(file_path, ignore_errors=True)
+                    except Exception as e:
+                        logger.debug(f"清理文件失败: {file_path}, 错误: {e}")
+            except Exception as e:
+                logger.debug(f"处理模式 {pattern} 时出错: {e}")
+        
+        logger.info(f"Chrome临时文件清理完成: {chrome_user_data_dir}")
+
+
+def clean_browser_user_data(base_dir: Optional[str] = None) -> None:
+    """清理浏览器的用户数据目录，特别是临时任务目录
+    
+    Args:
+        base_dir: 浏览器用户数据的基础目录，如果为None则使用默认目录
+    """
+    if base_dir is None:
+        # 使用默认目录
+        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "edge_user_data")
+    
+    if not os.path.exists(base_dir):
+        logger.warning(f"浏览器用户数据目录不存在: {base_dir}")
+        return
+    
+    logger.info(f"开始清理浏览器用户数据目录: {base_dir}")
+    
+    # 清理临时任务目录
+    task_dirs = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d)) and d.startswith("task_")]
+    
+    if task_dirs:
+        logger.info(f"发现 {len(task_dirs)} 个临时任务目录，开始清理...")
+        for task_dir in task_dirs:
+            try:
+                full_path = os.path.join(base_dir, task_dir)
+                logger.debug(f"正在删除临时目录: {full_path}")
+                shutil.rmtree(full_path, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"删除临时目录 {task_dir} 失败: {e}")
+    else:
+        logger.info("没有发现临时任务目录")
+    
+    # 清理主用户数据目录中的缓存文件
+    try:
+        ChromeCleanup.clean_chrome_temp_files(base_dir)
+    except Exception as e:
+        logger.warning(f"清理主用户数据目录缓存失败: {e}")
+    
+    logger.info("浏览器用户数据目录清理完成")
+
+
+if __name__ == "__main__":
+    # 设置日志
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # 执行清理
+    clean_browser_user_data()
+    print("浏览器用户数据清理完成") 

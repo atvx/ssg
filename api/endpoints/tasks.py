@@ -1,24 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
+from typing import List, Optional
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict
-import json
-import logging
+from datetime import datetime
 
 from db.database import get_db
-from db.crud import get_tasks_by_user, get_task, delete_task
-from schemas.task import Task, TaskStatus
-from schemas.user import User
-from schemas.response import APIResponse, StatusCode, ErrorType
-from utils.security import get_current_active_user
-from utils.response_utils import create_success_response, create_error_response
-from celery_app.tasks import fetch_meituan_task, fetch_duowei_task, fetch_all_data_task
+from db.crud import (
+    get_task, get_tasks_by_user, update_task, delete_task,
+    create_task_schedule_config, get_task_schedule_config, get_task_schedule_configs,
+    count_task_schedule_configs, update_task_schedule_config, delete_task_schedule_config
+)
+from models.user import User
+from schemas.task import Task, TaskCreate, TaskUpdate
+from schemas.task import TaskScheduleConfig, TaskScheduleConfigCreate, TaskScheduleConfigUpdate, TaskScheduleConfigList
+from schemas.response import ResponseBase, create_success_response, create_error_response, ErrorType
+from utils.auth_utils import get_current_active_user
 
 router = APIRouter()
 
-logger = logging.getLogger(__name__)
 
-
-@router.get("", summary="获取当前用户的任务列表")
+@router.get("", response_model=List[Task], summary="获取当前用户的任务列表")
 def read_tasks(
     skip: int = 0, 
     limit: int = 100, 
@@ -27,275 +27,307 @@ def read_tasks(
 ):
     """
     获取当前用户的任务列表
-    
-    参数:
-    - skip: 跳过记录数，默认0
-    - limit: 返回记录数上限，默认100
     """
-    tasks = get_tasks_by_user(db, user_id=current_user.id, skip=skip, limit=limit)
+    tasks = get_tasks_by_user(db, current_user.id, skip=skip, limit=limit)
+    return tasks
+
+
+@router.get("/{task_id}", response_model=Task, summary="获取任务详情")
+def read_task(
+    task_id: int = Path(..., description="任务ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取指定任务的详情
+    """
+    task = get_task(db, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    
+    # 检查任务是否属于当前用户
+    if task.user_id != current_user.id and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="没有权限访问该任务")
+    
+    return task
+
+
+@router.get("/status/{task_id}", response_model=ResponseBase, summary="获取任务状态")
+def read_task_status(
+    task_id: int = Path(..., description="任务ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取指定任务的状态信息
+    """
+    task = get_task(db, task_id)
+    if not task:
+                return create_error_response(
+            message="任务不存在",
+                    error_type=ErrorType.NOT_FOUND,
+            code=status.HTTP_404_NOT_FOUND
+        )
+    
+    # 检查任务是否属于当前用户
+    if task.user_id != current_user.id and not current_user.is_superuser:
+        return create_error_response(
+            message="没有权限访问该任务",
+            error_type=ErrorType.PERMISSION_DENIED,
+            code=status.HTTP_403_FORBIDDEN
+        )
+    
+    # 解析任务结果
+    result = None
+    if task.result:
+        try:
+            import json
+            result = json.loads(task.result)
+        except:
+            result = task.result
+    
+    # 解析任务参数
+    params = None
+    if task.params:
+        try:
+            if isinstance(task.params, str):
+                params = json.loads(task.params)
+            else:
+                params = task.params
+        except:
+            params = task.params
+    
     return create_success_response(
-        message="获取任务列表成功",
-        data=tasks
+        message="获取任务状态成功",
+        data={
+            "id": task.id,
+            "task_type": task.task_type,
+            "status": task.status,
+            "progress": task.progress,
+            "params": params,
+            "result": result,
+            "error": task.error,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None
+        }
     )
 
 
-@router.get("/{task_id}", summary="获取任务详情")
-def read_task(
-    task_id: int, 
+@router.delete("/{task_id}", response_model=ResponseBase, summary="取消/删除任务")
+def delete_task_endpoint(
+    task_id: int = Path(..., description="任务ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    获取任务详情
-    
-    参数:
-    - task_id: 任务ID
+    取消或删除指定任务
     """
-    try:
-        try:
-            db_task = get_task(db, task_id=task_id)
-            if db_task is None or db_task.user_id != current_user.id:
+    task = get_task(db, task_id)
+    if not task:
                 return create_error_response(
-                    message="任务不存在或无权限访问",
+            message="任务不存在",
                     error_type=ErrorType.NOT_FOUND,
-                    code=status.HTTP_404_NOT_FOUND,
-                    details=[{
-                        "field": "task_id",
-                        "message": "任务不存在或无权限访问"
-                    }]
-                )
-            return create_success_response(
-                message="获取任务详情成功",
-                data=db_task
-            )
-        except ValueError as e:
-            return create_error_response(
-                message=str(e),
-                error_type=ErrorType.VALIDATION_ERROR,
-                code=status.HTTP_400_BAD_REQUEST,
-                details=[{
-                    "field": "task_id",
-                    "message": str(e)
-                }]
-            )
-            
-    except Exception as e:
-        return create_error_response(
-            message=f"获取任务详情失败: {str(e)}",
-            error_type=ErrorType.SERVER_ERROR,
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details=[{
-                "field": "system",
-                "message": str(e)
-            }]
+            code=status.HTTP_404_NOT_FOUND
         )
-
-
-@router.get("/status/{task_id}", summary="获取任务状态")
-def get_task_status(
-    task_id: int, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
-):
-    """
-    获取任务状态
     
-    参数:
-    - task_id: 任务ID
-    """
-    try:
-        try:
-            task = get_task(db, task_id=task_id)
-            if task is None or task.user_id != current_user.id:
-                return create_error_response(
-                    message="任务不存在或无权限访问",
-                    error_type=ErrorType.NOT_FOUND,
-                    code=status.HTTP_404_NOT_FOUND,
-                    details=[{
-                        "field": "task_id",
-                        "message": "任务不存在或无权限访问"
-                    }]
-                )
-            
-            # 构建任务状态
-            task_status = TaskStatus(
-                task_id=task.id,
-                status=task.status,
-                created_at=task.created_at,
-                updated_at=task.updated_at,
-                result=task.result
-            )
-            
-            return create_success_response(
-                message="获取任务状态成功",
-                data=task_status
-            )
-        except ValueError as e:
-            return create_error_response(
-                message=str(e),
-                error_type=ErrorType.VALIDATION_ERROR,
-                code=status.HTTP_400_BAD_REQUEST,
-                details=[{
-                    "field": "task_id",
-                    "message": str(e)
-                }]
-            )
-            
-    except Exception as e:
+    # 检查任务是否属于当前用户
+    if task.user_id != current_user.id and not current_user.is_superuser:
         return create_error_response(
-            message=f"获取任务状态失败: {str(e)}",
-            error_type=ErrorType.SERVER_ERROR,
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details=[{
-                "field": "system",
-                "message": str(e)
-            }]
+            message="没有权限删除该任务",
+            error_type=ErrorType.PERMISSION_DENIED,
+            code=status.HTTP_403_FORBIDDEN
         )
+    
+    # 删除任务
+    delete_task(db, task_id)
+    
+    return create_success_response(
+        message="任务已成功删除",
+        data={"id": task_id}
+    )
 
 
-@router.delete("/{task_id}", summary="删除任务")
-def remove_task(
-    task_id: int, 
+# 任务调度配置相关接口
+@router.post("/schedule", response_model=TaskScheduleConfig, summary="创建任务调度配置", status_code=status.HTTP_201_CREATED)
+def create_schedule_config(
+    config: TaskScheduleConfigCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    删除任务
+    创建新的任务调度配置
     
-    参数:
-    - task_id: 任务ID
+    - **name**: 配置名称（唯一）
+    - **description**: 配置描述
+    - **task_type**: 任务类型
+    - **schedule_type**: 调度类型(crontab或interval)
+    - **minute**: 分钟 (crontab格式)
+    - **hour**: 小时 (crontab格式)
+    - **day_of_week**: 星期几 (crontab格式)
+    - **day_of_month**: 日期 (crontab格式)
+    - **month_of_year**: 月份 (crontab格式)
+    - **interval_seconds**: 间隔秒数 (interval格式)
+    - **start_time**: 开始时间 (HH:MM:SS)
+    - **end_time**: 结束时间 (HH:MM:SS)
+    - **enabled**: 是否启用
     """
-    try:
-        try:
-            db_task = get_task(db, task_id=task_id)
-            if db_task is None or db_task.user_id != current_user.id:
-                return create_error_response(
-                    message="任务不存在或无权限访问",
-                    error_type=ErrorType.NOT_FOUND,
-                    code=status.HTTP_404_NOT_FOUND,
-                    details=[{
-                        "field": "task_id",
-                        "message": "任务不存在或无权限访问"
-                    }]
-                )
-            
-            deleted_task = delete_task(db, task_id=task_id)
-            return create_success_response(
-                message="任务删除成功",
-                data=deleted_task
-            )
-        except ValueError as e:
-            return create_error_response(
-                message=str(e),
-                error_type=ErrorType.VALIDATION_ERROR,
-                code=status.HTTP_400_BAD_REQUEST,
-                details=[{
-                    "field": "task_id",
-                    "message": str(e)
-                }]
-            )
-            
-    except Exception as e:
-        return create_error_response(
-            message=f"删除任务失败: {str(e)}",
-            error_type=ErrorType.SERVER_ERROR,
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details=[{
-                "field": "system",
-                "message": str(e)
-            }]
+    # 检查权限（只有超级管理员可以创建调度配置）
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以创建任务调度配置"
         )
+    
+    # 检查名称是否已存在
+    existing_config = db.query(TaskScheduleConfig).filter(TaskScheduleConfig.name == config.name).first()
+    if existing_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"配置名称 '{config.name}' 已存在"
+        )
+    
+    # 创建配置
+    return create_task_schedule_config(db, config)
 
 
-@router.post("/execute/{task_id}", summary="直接执行任务")
-def execute_task(
-    task_id: int, 
+@router.get("/schedule", response_model=TaskScheduleConfigList, summary="获取任务调度配置列表")
+def read_schedule_configs(
+    skip: int = Query(0, description="跳过的记录数"),
+    limit: int = Query(100, description="返回的最大记录数"),
+    task_type: Optional[str] = Query(None, description="任务类型过滤"),
+    enabled: Optional[bool] = Query(None, description="是否启用过滤"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    直接执行任务（重新提交到Celery队列）
-    
-    参数:
-    - task_id: 任务ID
-    
-    返回:
-    - 执行结果信息
+    获取任务调度配置列表
     """
-    try:
-        try:
-            task = get_task(db, task_id=task_id)
-            if task is None or task.user_id != current_user.id:
-                return create_error_response(
-                    message="任务不存在或无权限访问",
-                    error_type=ErrorType.NOT_FOUND,
-                    code=status.HTTP_404_NOT_FOUND,
-                    details=[{
-                        "field": "task_id",
-                        "message": "任务不存在或无权限访问"
-                    }]
-                )
-            
-            # 根据任务类型选择相应的Celery任务
-            # 从任务记录中获取信息以重新执行
-            date = None  # 实际项目中需从记录或参数中获取日期
-            user_id = task.user_id
-            
-            # 从任务参数中获取查询日期
-            if task.params:
-                try:
-                    task_params = json.loads(task.params)
-                    date = task_params.get("date")
-                    logger.info(f"[任务ID: {task_id}] 从任务参数中获取查询日期: {date}")
-                except json.JSONDecodeError:
-                    logger.warning(f"[任务ID: {task_id}] 任务参数解析失败: {task.params}")
-            
-            if task.task_type == "fetch_meituan":
-                # 执行美团数据获取任务
-                result = fetch_meituan_task.apply_async(args=[task_id, date, user_id], task_id=f"{task_id}")
-                task_name = "美团数据"
-            elif task.task_type == "fetch_duowei":
-                # 执行多维数据获取任务
-                result = fetch_duowei_task.apply_async(args=[task_id, date, user_id], task_id=f"{task_id}")
-                task_name = "多维数据"
-            elif task.task_type == "fetch_all":
-                # 执行全平台数据获取任务
-                result = fetch_all_data_task.apply_async(args=[task_id, date, user_id], task_id=f"{task_id}")
-                task_name = "全平台数据"
-            else:
-                return create_error_response(
-                    message=f"不支持的任务类型: {task.task_type}",
-                    error_type=ErrorType.VALIDATION_ERROR,
-                    code=status.HTTP_400_BAD_REQUEST
-                )
-            
-            return create_success_response(
-                message=f"已重新执行{task_name}获取任务",
-                data={
-                    "task_id": task_id,
-                    "celery_task_id": result.id if hasattr(result, 'id') else None,
-                    "status": "submitted",
-                    "status_check_url": f"/api/tasks/status/{task_id}"
-                }
+    # 检查权限（只有超级管理员可以查看所有调度配置）
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以查看任务调度配置"
+        )
+    
+    configs = get_task_schedule_configs(db, skip, limit, task_type, enabled)
+    total = count_task_schedule_configs(db, task_type, enabled)
+    
+    return {
+        "total": total,
+        "items": configs
+    }
+
+
+@router.get("/schedule/{config_id}", response_model=TaskScheduleConfig, summary="获取任务调度配置详情")
+def read_schedule_config(
+    config_id: int = Path(..., description="配置ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取指定任务调度配置的详情
+    """
+    # 检查权限（只有超级管理员可以查看调度配置）
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以查看任务调度配置"
+        )
+    
+    config = get_task_schedule_config(db, config_id)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="任务调度配置不存在"
+        )
+    
+    return config
+
+
+@router.put("/schedule/{config_id}", response_model=TaskScheduleConfig, summary="更新任务调度配置")
+def update_schedule_config(
+    config_id: int,
+    config_update: TaskScheduleConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    更新指定任务调度配置
+    """
+    # 检查权限（只有超级管理员可以更新调度配置）
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以更新任务调度配置"
+        )
+    
+    # 检查配置是否存在
+    existing_config = get_task_schedule_config(db, config_id)
+    if not existing_config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="任务调度配置不存在"
+        )
+    
+    # 如果更新了名称，检查新名称是否已存在
+    if config_update.name and config_update.name != existing_config.name:
+        name_exists = db.query(TaskScheduleConfig).filter(
+            TaskScheduleConfig.name == config_update.name,
+            TaskScheduleConfig.id != config_id
+        ).first()
+        if name_exists:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"配置名称 '{config_update.name}' 已存在"
             )
-        except ValueError as e:
-            return create_error_response(
-                message=str(e),
-                error_type=ErrorType.VALIDATION_ERROR,
-                code=status.HTTP_400_BAD_REQUEST,
-                details=[{
-                    "field": "task_id",
-                    "message": str(e)
-                }]
-            )
-            
-    except Exception as e:
+    
+    # 更新配置
+    updated_config = update_task_schedule_config(db, config_id, config_update)
+    if not updated_config:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="更新任务调度配置失败"
+        )
+    
+    return updated_config
+
+
+@router.delete("/schedule/{config_id}", response_model=ResponseBase, summary="删除任务调度配置")
+def delete_schedule_config(
+    config_id: int = Path(..., description="配置ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    删除指定任务调度配置
+    """
+    # 检查权限（只有超级管理员可以删除调度配置）
+    if not current_user.is_superuser:
         return create_error_response(
-            message=f"执行任务失败: {str(e)}",
+            message="只有管理员可以删除任务调度配置",
+            error_type=ErrorType.PERMISSION_DENIED,
+            code=status.HTTP_403_FORBIDDEN
+        )
+    
+    # 检查配置是否存在
+    config = get_task_schedule_config(db, config_id)
+    if not config:
+            return create_error_response(
+            message="任务调度配置不存在",
+            error_type=ErrorType.NOT_FOUND,
+            code=status.HTTP_404_NOT_FOUND
+        )
+    
+    # 删除配置
+    success = delete_task_schedule_config(db, config_id)
+    if not success:
+        return create_error_response(
+            message="删除任务调度配置失败",
             error_type=ErrorType.SERVER_ERROR,
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details=[{
-                "field": "system",
-                "message": str(e)
-            }]
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    return create_success_response(
+        message="任务调度配置已成功删除",
+        data={"id": config_id}
         )

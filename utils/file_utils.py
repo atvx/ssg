@@ -60,37 +60,83 @@ def force_kill_processes(process_names):
     import subprocess
     import logging
     import time
+    import os
+    import signal
     
     logger = logging.getLogger(__name__)
     system = platform.system()
     
     try:
         if system == "Windows":
-            # Windows系统
+            # Windows系统 - 使用多种方法确保进程被终止
             for name in process_names:
                 try:
+                    # 方法1: 使用taskkill终止进程名
                     subprocess.run(['taskkill', '/F', '/IM', f"{name}.exe"], 
                                   stdout=subprocess.DEVNULL, 
                                   stderr=subprocess.DEVNULL,
                                   check=False)
+                    
+                    # 方法2: 使用taskkill和/FI过滤器查找包含进程名的进程
+                    subprocess.run(['taskkill', '/F', '/FI', f"IMAGENAME eq *{name}*"], 
+                                  stdout=subprocess.DEVNULL, 
+                                  stderr=subprocess.DEVNULL,
+                                  check=False)
+                    
+                    # 方法3: 使用wmic查找并终止进程
+                    try:
+                        # 查找进程ID
+                        cmd = f'wmic process where "name like \'%{name}%\'" get processid'
+                        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                        
+                        # 提取进程ID并终止
+                        if result.stdout:
+                            for line in result.stdout.strip().split('\n')[1:]:  # 跳过标题行
+                                if line.strip():
+                                    try:
+                                        pid = int(line.strip())
+                                        os.kill(pid, signal.SIGTERM)
+                                    except (ValueError, ProcessLookupError):
+                                        pass
+                    except Exception as wmic_error:
+                        logger.debug(f"使用wmic终止进程时出错: {wmic_error}")
+                        
                 except Exception as e:
                     logger.debug(f"终止Windows进程 {name} 时出错: {e}")
         
         elif system == "Darwin" or system == "Linux":
-            # macOS或Linux系统
+            # macOS或Linux系统 - 使用多种方法确保进程被终止
             for name in process_names:
                 try:
-                    # 使用pkill终止进程
+                    # 方法1: 使用pkill终止进程
                     subprocess.run(['pkill', '-f', name], 
                                   stdout=subprocess.DEVNULL, 
                                   stderr=subprocess.DEVNULL,
                                   check=False)
                     
-                    # 使用killall作为备份方案
+                    # 方法2: 使用killall作为备份方案
                     subprocess.run(['killall', '-9', name], 
                                   stdout=subprocess.DEVNULL, 
                                   stderr=subprocess.DEVNULL,
                                   check=False)
+                    
+                    # 方法3: 使用ps查找进程并使用kill终止
+                    try:
+                        # 查找进程ID
+                        cmd = f"ps aux | grep {name} | grep -v grep | awk '{{print $2}}'"
+                        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                        
+                        # 提取进程ID并终止
+                        if result.stdout:
+                            for pid in result.stdout.strip().split('\n'):
+                                if pid.strip():
+                                    try:
+                                        os.kill(int(pid), signal.SIGKILL)
+                                    except (ValueError, ProcessLookupError):
+                                        pass
+                    except Exception as ps_error:
+                        logger.debug(f"使用ps/kill终止进程时出错: {ps_error}")
+                        
                 except Exception as e:
                     logger.debug(f"终止Unix进程 {name} 时出错: {e}")
         

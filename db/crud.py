@@ -10,7 +10,7 @@ import json
 
 from . import models
 from models.user import User
-from models.task import Task
+from models.task import Task, TaskScheduleConfig
 from models.sales import SalesRecord
 from models.ext_account import ExtAccount
 from schemas import user as user_schema
@@ -18,7 +18,7 @@ from schemas import sales as sales_schema
 from schemas import task as task_schema
 from schemas import org as org_schema
 from schemas.user import UserCreate, UserUpdate
-from schemas.task import TaskCreate
+from schemas.task import TaskCreate, TaskScheduleConfigCreate, TaskScheduleConfigUpdate
 from schemas.sales import MonthlySalesTargetCreate, MonthlySalesTargetUpdate
 from utils.security import get_password_hash, verify_password
 
@@ -1238,4 +1238,141 @@ def get_sales_records_stats_data(db: Session, query_date: str) -> List[Dict[str,
         raise
     except Exception as e:
         logger.error(f"获取销售记录统计数据失败: {str(e)}")
+        raise
+
+
+# 任务调度配置相关操作
+def create_task_schedule_config(db: Session, config: TaskScheduleConfigCreate) -> TaskScheduleConfig:
+    """创建任务调度配置"""
+    try:
+        db_config = TaskScheduleConfig(
+            name=config.name,
+            description=config.description,
+            task_type=config.task_type,
+            schedule_type=config.schedule_type,
+            minute=config.minute,
+            hour=config.hour,
+            day_of_week=config.day_of_week,
+            day_of_month=config.day_of_month,
+            month_of_year=config.month_of_year,
+            interval_seconds=config.interval_seconds,
+            start_time=config.start_time,
+            end_time=config.end_time,
+            enabled=config.enabled,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+        
+        db.add(db_config)
+        db.commit()
+        db.refresh(db_config)
+        return db_config
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"创建任务调度配置失败: {str(e)}")
+        raise
+
+
+def get_task_schedule_config(db: Session, config_id: int) -> Optional[TaskScheduleConfig]:
+    """根据ID获取任务调度配置"""
+    return db.query(TaskScheduleConfig).filter(TaskScheduleConfig.id == config_id).first()
+
+
+def get_task_schedule_config_by_name(db: Session, name: str) -> Optional[TaskScheduleConfig]:
+    """根据名称获取任务调度配置"""
+    return db.query(TaskScheduleConfig).filter(TaskScheduleConfig.name == name).first()
+
+
+def get_task_schedule_configs(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 100,
+    task_type: Optional[str] = None,
+    enabled: Optional[bool] = None
+) -> List[TaskScheduleConfig]:
+    """获取任务调度配置列表"""
+    query = db.query(TaskScheduleConfig)
+    
+    if task_type:
+        query = query.filter(TaskScheduleConfig.task_type == task_type)
+    
+    if enabled is not None:
+        query = query.filter(TaskScheduleConfig.enabled == enabled)
+    
+    return query.order_by(TaskScheduleConfig.id).offset(skip).limit(limit).all()
+
+
+def count_task_schedule_configs(
+    db: Session,
+    task_type: Optional[str] = None,
+    enabled: Optional[bool] = None
+) -> int:
+    """计算任务调度配置总数"""
+    query = db.query(func.count(TaskScheduleConfig.id))
+    
+    if task_type:
+        query = query.filter(TaskScheduleConfig.task_type == task_type)
+    
+    if enabled is not None:
+        query = query.filter(TaskScheduleConfig.enabled == enabled)
+    
+    return query.scalar()
+
+
+def update_task_schedule_config(
+    db: Session, 
+    config_id: int, 
+    config_update: TaskScheduleConfigUpdate
+) -> Optional[TaskScheduleConfig]:
+    """更新任务调度配置"""
+    db_config = get_task_schedule_config(db, config_id)
+    if not db_config:
+        return None
+    
+    update_data = config_update.dict(exclude_unset=True)
+    update_data["updated_at"] = datetime.now(timezone.utc)
+    
+    for key, value in update_data.items():
+        setattr(db_config, key, value)
+    
+    try:
+        db.commit()
+        db.refresh(db_config)
+        return db_config
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"更新任务调度配置失败: {str(e)}")
+        raise
+
+
+def delete_task_schedule_config(db: Session, config_id: int) -> bool:
+    """删除任务调度配置"""
+    db_config = get_task_schedule_config(db, config_id)
+    if not db_config:
+        return False
+    
+    try:
+        db.delete(db_config)
+        db.commit()
+        return True
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"删除任务调度配置失败: {str(e)}")
+        raise
+
+
+def update_last_run_at(db: Session, config_id: int) -> bool:
+    """更新配置的最后运行时间"""
+    db_config = get_task_schedule_config(db, config_id)
+    if not db_config:
+        return False
+    
+    try:
+        db_config.last_run_at = datetime.now(timezone.utc)
+        db_config.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return True
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"更新任务调度配置最后运行时间失败: {str(e)}")
         raise

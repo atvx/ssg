@@ -1,46 +1,60 @@
-from fastapi import APIRouter
-from api.endpoints import auth, sales, tasks, orgs, records, report
+from fastapi import APIRouter, Depends
+from api.endpoints import auth, users, tasks, sales, orgs, records, report
+from utils.auth_utils import get_current_active_user
 
 api_router = APIRouter()
 
-# 注册认证相关路由
+# 认证相关路由
 api_router.include_router(
     auth.router,
     prefix="/auth",
-    tags=["authentication"]
+    tags=["认证"]
 )
 
-# 注册销售数据相关路由
+# 用户相关路由
 api_router.include_router(
-    sales.router,
-    prefix="/sales",
-    tags=["sales"]
+    users.router,
+    prefix="/users",
+    tags=["用户"],
+    dependencies=[Depends(get_current_active_user)]
 )
 
-# 注册任务管理相关路由
+# 任务相关路由
 api_router.include_router(
     tasks.router,
     prefix="/tasks",
-    tags=["tasks"]
+    tags=["任务"],
+    dependencies=[Depends(get_current_active_user)]
 )
 
-# 注册机构管理相关路由
+# 销售数据相关路由
+api_router.include_router(
+    sales.router,
+    prefix="/sales",
+    tags=["销售数据"],
+    dependencies=[Depends(get_current_active_user)]
+)
+
+# 组织机构相关路由
 api_router.include_router(
     orgs.router,
     prefix="/orgs",
-    tags=["organizations"]
+    tags=["组织机构"],
+    dependencies=[Depends(get_current_active_user)]
 )
 
-# 注册销售记录相关路由
+# 销售记录相关路由
 api_router.include_router(
     records.router,
-    prefix="/sales",
-    tags=["sales-records"]
+    prefix="/records",
+    tags=["销售记录"],
+    dependencies=[Depends(get_current_active_user)]
 )
 
-# 注册报告相关路由
+# 报表相关路由
 api_router.include_router(
     report.router,
     prefix="/report",
-    tags=["reports"]
+    tags=["报表"],
+    dependencies=[Depends(get_current_active_user)]
 )

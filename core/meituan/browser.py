@@ -424,6 +424,33 @@ def manual_download_edgedriver(version=None):
         return None
 
 
+def save_session_to_persistent(session_dir, persistent_dir):
+    """
+    将会话目录中的登录信息保存到持久化目录
+    
+    Args:
+        session_dir: 会话目录路径
+        persistent_dir: 持久化目录路径
+    """
+    try:
+        # 确保持久化目录存在
+        os.makedirs(persistent_dir, exist_ok=True)
+        
+        # 复制关键登录文件到持久化目录
+        logger.info(f"保存登录信息到持久化目录: {session_dir} -> {persistent_dir}")
+        for item in ['Cookies', 'Login Data', 'Web Data', 'Preferences']:
+            src_file = os.path.join(session_dir, item)
+            if os.path.exists(src_file):
+                dst_file = os.path.join(persistent_dir, item)
+                shutil.copy2(src_file, dst_file)
+                logger.debug(f"已复制文件: {item}")
+        
+        return True
+    except Exception as e:
+        logger.warning(f"保存登录信息到持久化目录失败: {e}")
+        return False
+
+
 def init_edge_driver(config, force_new_session=False):
     """初始化Edge浏览器"""
     max_attempts = 3
@@ -439,14 +466,62 @@ def init_edge_driver(config, force_new_session=False):
             # 配置Edge选项
             edge_options = EdgeOptions()
             
-            # 设置用户数据目录
+            # 设置用户数据目录 - 为每个任务创建唯一目录
             user_data_dir = config.get("USER_DATA_DIR")
             if user_data_dir:
-                if os.path.exists(user_data_dir):
-                    logger.info(f"使用配置的用户数据目录: {user_data_dir}")
-                    edge_options.add_argument(f"--user-data-dir={user_data_dir}")
+                # 使用固定的用户数据目录作为基础，但为每个进程添加唯一标识符
+                # 这样可以避免并发任务冲突，同时保留登录信息
+                task_id = str(int(time.time()))
+                process_id = os.getpid()
+                
+                if force_new_session:
+                    # 强制创建新会话时使用完全唯一的目录
+                    unique_user_data_dir = os.path.join(user_data_dir, f"task_{task_id}")
+                    logger.info(f"强制创建新会话，使用唯一用户数据目录: {unique_user_data_dir}")
                 else:
-                    logger.warning(f"用户数据目录不存在: {user_data_dir}")
+                    # 使用进程ID作为标识符，避免并发冲突
+                    # 但将登录信息复制到持久化目录中以便复用
+                    unique_user_data_dir = os.path.join(user_data_dir, f"session_{process_id}")
+                    persistent_dir = os.path.join(user_data_dir, "persistent_session")
+                    
+                    # 确保持久化目录存在
+                    if not os.path.exists(persistent_dir):
+                        os.makedirs(persistent_dir, exist_ok=True)
+                        logger.info(f"创建持久化目录: {persistent_dir}")
+                    
+                    # 如果持久化目录存在且不为空，而当前会话目录不存在，则复制持久化目录内容
+                    if os.path.exists(persistent_dir) and os.listdir(persistent_dir) and not os.path.exists(unique_user_data_dir):
+                        try:
+                            # 创建会话目录
+                            os.makedirs(unique_user_data_dir, exist_ok=True)
+                            
+                            # 复制持久化目录中的关键文件到会话目录
+                            logger.info(f"从持久化目录复制登录信息到会话目录: {persistent_dir} -> {unique_user_data_dir}")
+                            for item in ['Cookies', 'Login Data', 'Web Data', 'Preferences']:
+                                src_file = os.path.join(persistent_dir, item)
+                                if os.path.exists(src_file):
+                                    dst_file = os.path.join(unique_user_data_dir, item)
+                                    shutil.copy2(src_file, dst_file)
+                        except Exception as e:
+                            logger.warning(f"复制持久化登录信息失败: {e}")
+                    
+                    logger.info(f"使用进程特定会话目录: {unique_user_data_dir}")
+                
+                # 确保目录存在
+                os.makedirs(unique_user_data_dir, exist_ok=True)
+                edge_options.add_argument(f"--user-data-dir={unique_user_data_dir}")
+            else:
+                logger.warning("未配置用户数据目录，将使用临时目录")
+                temp_dir = os.path.join(tempfile.gettempdir(), f"edge_user_data_{int(time.time())}")
+                os.makedirs(temp_dir, exist_ok=True)
+                edge_options.add_argument(f"--user-data-dir={temp_dir}")
+            
+            # 添加其他参数避免冲突
+            edge_options.add_argument("--no-sandbox")
+            edge_options.add_argument("--disable-dev-shm-usage")
+            edge_options.add_argument("--disable-gpu")
+            edge_options.add_argument("--disable-extensions")
+            edge_options.add_argument("--disable-default-apps")
             
             # 配置无头模式
             if config.get("HEADLESS", False):
@@ -598,7 +673,15 @@ def init_edge_driver(config, force_new_session=False):
             
             if attempt < max_attempts - 1:
                 logger.info("正在清理并重试...")
+                # 更强力的进程清理
                 force_kill_processes(['msedge', 'msedgedriver', 'Microsoft Edge'])
+                # 在Windows上使用taskkill强制结束进程
+                if platform.system().lower() == "windows":
+                    try:
+                        subprocess.run(['taskkill', '/F', '/IM', 'msedge.exe'], check=False)
+                        subprocess.run(['taskkill', '/F', '/IM', 'msedgedriver.exe'], check=False)
+                    except Exception as kill_error:
+                        logger.warning(f"强制结束进程失败: {kill_error}")
                 time.sleep(5)  # 等待更长时间
             else:
                 raise Exception(f"多次尝试后仍无法启动浏览器: {e}")

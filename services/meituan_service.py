@@ -122,11 +122,22 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
     
     logger.info(f"获取美团数据，查询日期: {query_date}")
     
+    # 在启动浏览器前先清理可能存在的进程
+    from utils.file_utils import force_kill_processes
+    logger.info("预先清理可能存在的浏览器进程...")
+    force_kill_processes(['msedge', 'msedgedriver', 'Microsoft Edge'])
+    time.sleep(2)  # 等待进程完全退出
+    
     try:
         # 初始化浏览器，开启API监控
         # 创建一个包含所有参数的配置字典
+        # 使用固定的用户数据目录以复用登录信息
+        user_data_base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "edge_user_data")
+        persistent_user_data_dir = os.path.join(user_data_base, "persistent_session")
+        os.makedirs(persistent_user_data_dir, exist_ok=True)
+        
         browser_config = {
-            "USER_DATA_DIR": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "edge_user_data"),
+            "USER_DATA_DIR": user_data_base,  # 使用基础目录，让browser.py决定具体子目录
             "HEADLESS": settings.HEADLESS,
             "MONITOR_API_RESPONSE": True,
             "MONITOR_SCOPES": [".*pos\\.meituan\\.com.*"]  # 匹配所有美团POS域名下的请求
@@ -135,8 +146,8 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
         # 添加浏览器配置日志
         logger.info(f"浏览器配置信息: HEADLESS={settings.HEADLESS}, USER_DATA_DIR={browser_config['USER_DATA_DIR']}")
         
-        # 使用配置字典初始化浏览器
-        driver = init_edge_driver(config=browser_config)
+        # 使用配置字典初始化浏览器，不再强制创建新会话
+        driver = init_edge_driver(config=browser_config, force_new_session=False)
         
         # 先访问美团登录页面
         driver.get(LOGIN_URL)
@@ -180,6 +191,21 @@ def fetch_meituan_data(db: Session, date: Optional[str] = None, user_id: Optiona
                 logger.error("登录失败")
                 task_result["message"] = "登录失败，请检查账号密码或登录环境"
                 return task_result
+            else:
+                # 登录成功，保存会话信息到持久化目录
+                try:
+                    from core.meituan.browser import save_session_to_persistent
+                    # 获取当前会话目录
+                    user_data_base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "edge_user_data")
+                    process_id = os.getpid()
+                    session_dir = os.path.join(user_data_base, f"session_{process_id}")
+                    persistent_dir = os.path.join(user_data_base, "persistent_session")
+                    
+                    if os.path.exists(session_dir) and os.path.isdir(session_dir):
+                        save_session_to_persistent(session_dir, persistent_dir)
+                        logger.info("已保存登录信息到持久化目录")
+                except Exception as e:
+                    logger.warning(f"保存登录信息失败: {e}")
         else:
             logger.info("已登录")
         

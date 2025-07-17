@@ -50,3 +50,15 @@ task_time_limit = 900           # 15分钟硬超时
 
 # 结果过期时间
 result_expires = 86400  # 24小时
+
+# Beat调度器配置
+beat_scheduler = 'celery.beat.PersistentScheduler'
+beat_schedule_filename = 'celerybeat-schedule'  # 调度器数据文件
+beat_max_loop_interval = 60     # 最大循环间隔（秒）
+beat_sync_every = 10            # 同步调度到数据库的频率
+
+# 启用调度器任务自动加载
+imports = ('celery_app.tasks',)
+
+# 调度器锁超时设置
+beat_schedule_expire_seconds = 3600  # 调度器锁超时时间（秒）
